@@ -1,0 +1,7 @@
+.idea
+reference
+venv
+*.png
+.ipynb_checkpoints
+.pytest_cache
+.DS_Store
