@@ -15,7 +15,7 @@ plt.style.use('seaborn-v0_8')
 #######################
 ### IMPORTANT PATHS ###
 #######################
-data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data"
+data_dir = "/Users/olledejong/Studie/MSc Biology/Research Project V1/Code and data/Data"
 tiff_files_dir = data_dir + "/processed_tiffs_nup133/"  # relative path from data directory to tiff directory
 output_dir = data_dir + "/Output/"  # relative path from data directory to image output directory
 budj_data_folder = data_dir + "/Other/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
@@ -189,6 +189,9 @@ def get_whole_cell_mask(t, single_cell_data, image_shape):
 
 def get_volume_data(budj_data, individual_cells):
     """
+    The most complex, and by far most compute intensive, function of this script. It goes through all tiff movies and
+    all cells, and for each cell it loops over all frame in the movie. For every frame, local thresholding is performed,
+    and an ellipse is fitted. Using this ellipse, the volume is calculated. It all is stored within one dataframe.
 
     :param budj_data:
     :param individual_cells:
@@ -273,6 +276,7 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
     """
     Function responsible splitting the data of each cell on kariokinesis events, where after the data per
     cycle is interpolated to 100 datapoints.
+
     :param final_dataframe:
     :param individual_cells:
     :param kario_events:
@@ -281,6 +285,7 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
     desired_datapoints = 100
     cols = ["cell", "cycle", "start", "end"]
     cols += range(desired_datapoints)
+
     for data_type in ["Cell_volume", "Nucleus_volume", "N/C_ratio"]:  # interpolate the columns in this list
         data_interpolated = pd.DataFrame(columns=cols)
 
@@ -313,7 +318,40 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
                 count += 1
 
         if data_type == "N/C_ratio": data_type = "NC_ratio"  # cannot save file
-        data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_{data_type}.xlsx")
+        data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_{data_type}s.xlsx")
+
+
+def generate_averaged_plots():
+    """
+    Takes the interpolated data files (excel files) and averages these. The averages are plotted over time and
+    saved to the user's system.
+
+    :return:
+    """
+    cell_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Cell_volumes.xlsx")
+    nuc_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_volumes.xlsx")
+    nc_ratios_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
+    data_list = [
+        ("Cell volume", cell_volumes_interpolated.mean(axis=0)),
+        ("Nuclear volume", nuc_volumes_interpolated.mean(axis=0)),
+        ("N/C ratio", nc_ratios_interpolated.mean(axis=0))
+    ]
+
+    for data in data_list:
+        plt.plot(data[1][4:].values, 'r', linewidth=3)
+        plt.title(f"Average {data[0]} over time", fontstyle='italic', y=1.02)
+        plt.xlabel("Time")
+        plt.ylabel(data[0])
+        if data[0] == "N/C ratio":
+            filename = "NC ratio"  # cannot save file
+        else:
+            filename = data[0]
+        plt.savefig(
+            f"{output_dir}plots/interpolated_averaged/{filename}.png",
+            bbox_inches='tight',
+            dpi=350
+        )
+        plt.close()
 
 
 def main():
@@ -321,7 +359,7 @@ def main():
     budding_events, kario_events = load_events()  # load the kyrokinesis and budding events
     individual_cells = sorted(list(set(budj_data["Cell_pos"])))  # how many cells are there in total
 
-    # if the entire dataset already exists, prevent generating this again and load it
+    # if volume dataset already exists, prevent generating this again and load it
     final_dataframe_path = f"{output_dir}excel/nup133_final_data.xlsx"
     if os.path.exists(final_dataframe_path):
         print("Volume data has been generated already. The output file exists. loading it from file..")
@@ -330,6 +368,7 @@ def main():
         print("Generating volume data..")
         final_dataframe = get_volume_data(budj_data, individual_cells)
 
+    # check if cycles have been split and interpolated, if not, do this
     count = 0
     for filename in os.listdir(f"{output_dir}excel/"):
         if "cycles_interpolated" in filename:
@@ -338,6 +377,9 @@ def main():
         print("Interpolation has already been performed. Output files exist.")
     else:
         split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events)
+
+    # average the interpolated data and plot the result (cell volume, nucleus volume and N/C ratio)
+    generate_averaged_plots()
 
     print("Done.")
 
