@@ -286,12 +286,10 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
         single_cell_data = final_dataframe[final_dataframe.Cell_pos == cell]
         single_cell_data = single_cell_data[~single_cell_data.Nucleus_volume.isnull()]
 
-        # print(f"Kario events for {cell}: {kario_events[cell]}")
         count = 0
         while count < len(kario_events[cell]) - 1:
             tp1 = kario_events[cell][count]
             tp2 = kario_events[cell][count + 1]
-            # print(f"{cell} - Getting N/C ratio data from {tp1} through {tp2}")
             cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
             # when there are not enough datapoints for this cycle, because of outlier cleaning, then ignore that cycle
@@ -304,7 +302,7 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
             y = cell_cycle_dat['N/C_ratio']
 
             # interpolate the data towards 100 datapoints
-            x_new = np.linspace(0, len(cell_cycle_dat), 100)
+            x_new = np.linspace(0, len(cell_cycle_dat), desired_datapoints)
             f1 = interpolate.interp1d(x, y, kind='linear')
             f2 = interpolate.interp1d(x, y, kind='cubic')
 
@@ -312,7 +310,7 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
             data_interpolated.loc[len(data_interpolated)] = [cell, count + 1, tp1, tp2] + f2(x_new).tolist()
             count += 1
 
-    data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_script_removed_outliers.xlsx")  # save the final file
+    data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_script_removed_outliers.xlsx")  # save final file
     return data_interpolated
 
 
@@ -322,6 +320,7 @@ def main():
     individual_cells = sorted(list(set(budj_data["Cell_pos"])))  # how many cells are there in total
 
     final_dataframe = get_volume_data(budj_data, individual_cells)
+    # TODO Do this for volumes as well
     interpolated_data = split_cycles_and_interpolate(final_dataframe, final_dataframe, kario_events)
     print("Done.")
 
