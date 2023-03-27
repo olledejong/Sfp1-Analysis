@@ -151,11 +151,11 @@ def get_area_and_vol(minor_r, major_r):
     :param major_r:
     :return:
     """
-    r1c = (major_r * scaling_factor)  # to get the semi-major axis of the whole cell
-    r2c = (minor_r * scaling_factor)  # to get the semi-minor axis of the whole cell
-    r3c = (np.average((major_r, minor_r)) * scaling_factor)  # to get the third axis
-    volume = (4 / 3) * pi * r1c * r2c * r3c
-    area = pi * r1c * r2c
+    r1c = (major_r * scaling_factor)  # semi-major axis of the whole cell (from pixels to µm using scaling factor)
+    r2c = (minor_r * scaling_factor)  # semi-minor axis of the whole cell (from pixels to µm using scaling factor)
+    r3c = (np.average((major_r, minor_r)) * scaling_factor)  # third axis of ellipse is average of two known ones
+    volume = (4 / 3) * pi * r1c * r2c * r3c  # µm * µm * µm --> cubic µm
+    area = pi * r1c * r2c  # µm * µm --> squared µm
     return area, volume
 
 
@@ -287,6 +287,7 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
     cols = ["cell", "cycle", "start", "end"]
     cols += range(desired_datapoints)
 
+    interpolated_dataframes = []
     for data_type in ["Cell_volume", "Nucleus_volume", "N/C_ratio"]:  # interpolate the columns in this list
         data_interpolated = pd.DataFrame(columns=cols)
 
@@ -320,39 +321,73 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
 
         if data_type == "N/C_ratio": data_type = "NC_ratio"  # cannot save file
         data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_{data_type}s.xlsx")
+        interpolated_dataframes.append(data_interpolated)
+    return interpolated_dataframes
 
 
-def generate_averaged_plots():
+def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated):
     """
-    Takes the interpolated data files (excel files) and averages these. The averages are plotted over time and
+    Takes the interpolated data files (Excel files) and averages these. The averages are plotted over time and
     saved to the user's system.
 
     :return:
     """
-    cell_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Cell_volumes.xlsx")
-    nuc_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_volumes.xlsx")
-    nc_ratios_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
-    data_list = [
-        ("Cell volume", cell_volumes_interpolated.mean(axis=0, numeric_only=True)),
-        ("Nuclear volume", nuc_volumes_interpolated.mean(axis=0, numeric_only=True)),
-        ("N/C ratio", nc_ratios_interpolated.mean(axis=0, numeric_only=True))
+    data_list = [  # average the interpolated cycles
+        ("Cell volume", cell_volumes_interpolated.mean(axis=0, numeric_only=True), "µm\u00b3"),
+        ("Nuclear volume", nuc_volumes_interpolated.mean(axis=0, numeric_only=True), "µm\u00b3"),
+        ("N/C ratio", nc_ratios_interpolated.mean(axis=0, numeric_only=True), None)
     ]
 
     for data in data_list:
         plt.plot(data[1][4:].values, 'r', linewidth=3)
         plt.title(f"Average {data[0]} over time", fontstyle='italic', y=1.02)
         plt.xlabel("Time")
-        plt.ylabel(data[0])
-        if data[0] == "N/C ratio":
-            filename = "NC ratio"  # cannot save file
+        if data[2] is not None:
+            plt.ylabel(f"{data[0]} ({data[2]})")
         else:
-            filename = data[0]
+            plt.ylabel(data[0])
+        filename = "NC ratio" if data[0] == "N/C ratio" else data[0]
         plt.savefig(
             f"{output_dir}plots/interpolated_averaged/{filename}.png",
             bbox_inches='tight',
             dpi=350
         )
         plt.close()
+
+    generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated)
+
+
+def generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated):
+    """
+
+    :param cell_volumes_interpolated:
+    :param nuc_volumes_interpolated:
+    :return:
+    """
+    # take the mean of the dataframes again
+    cell_volumes_interpolated = cell_volumes_interpolated.mean(axis=0, numeric_only=True)
+    nuc_volumes_interpolated = nuc_volumes_interpolated.mean(axis=0, numeric_only=True)
+
+    # also generate one with nuc and cell volume together
+    fig, ax1 = plt.subplots()
+
+    ax1.set_xlabel('Time')
+    ax1.set_ylabel("Cell volume (µm\u00b3)", color='tab:red')
+    ax1.plot(cell_volumes_interpolated[4:].values, color='tab:red')
+    ax1.tick_params(axis='y', labelcolor='tab:red')
+
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+
+    ax2.set_ylabel("Nucleus volume (µm\u00b3)", color='tab:blue')
+    ax2.plot(nuc_volumes_interpolated[4:].values, color='tab:blue')
+    ax2.tick_params(axis='y', labelcolor='tab:blue')
+
+    plt.savefig(
+        f"{output_dir}plots/interpolated_averaged/Volumes_together.png",
+        bbox_inches='tight',
+        dpi=350
+    )
+    plt.close()
 
 
 def main():
@@ -373,16 +408,24 @@ def main():
     # check if cycles have been split and interpolated, if not, do this
     count = 0
     for filename in os.listdir(f"{output_dir}excel/"):
-        if "cycles_interpolated" in filename:
+        if "cycles_interpolated" in filename and "~$" not in filename:
             count += 1
     if count == 3:
-        print("Interpolation has already been performed. Output files exist.")
+        # load the interpolated files
+        print("Interpolation has already been performed. Output files exist. Loading them..")
+        cell_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Cell_volumes.xlsx")
+        nuc_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_volumes.xlsx")
+        nc_ratios_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
     else:
-        split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events)
+        print("Performing interpolation on cell volume, nuc volume and n/c ratio data..")
+        interpolated_dataframes = split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events)
+        cell_volumes_interpolated = interpolated_dataframes[0]
+        nuc_volumes_interpolated = interpolated_dataframes[1]
+        nc_ratios_interpolated = interpolated_dataframes[2]
 
     # average the interpolated data and plot the result (cell volume, nucleus volume and N/C ratio)
     print("Generating the averaged interpolated data plots..")
-    generate_averaged_plots()
+    generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated)
 
     toc = time.perf_counter()
     print(f"Done. Runtime was {toc - tic:0.4f} seconds")
