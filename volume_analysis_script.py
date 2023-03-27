@@ -6,7 +6,6 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 from scipy import interpolate
-from scipy.ndimage import binary_erosion
 from skimage.io import imread
 from skimage.filters import threshold_local, threshold_minimum, threshold_multiotsu
 from skimage.morphology import remove_small_objects, disk, erosion
@@ -239,6 +238,7 @@ def get_volume_data(budj_data, individual_cells):
                     # thresholding did not lead to an ellipse, nucleus was probably out of focus
                     could_not_fit += 1
                     nuc_volumes.append(None)
+                    nuc_areas.append(None)
                     continue
 
                 # save nucleus area and volume to dataframe
@@ -265,13 +265,14 @@ def get_volume_data(budj_data, individual_cells):
     # remove unrealistic N/C ratios
     final_dataframe = final_dataframe.drop(final_dataframe[final_dataframe["N/C_ratio"] > .32].index)
     final_dataframe = final_dataframe.reset_index(drop=True)  # reset index of dataframe
-    final_dataframe.to_excel(f"{output_dir}excel/nup133_final_data_script_removed_outliers.xlsx")  # save the final file
+    final_dataframe.to_excel(f"{output_dir}excel/nup133_final_data.xlsx")  # save the final file
     return final_dataframe
 
 
 def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events):
     """
-
+    Function responsible splitting the data of each cell on kariokinesis events, where after the data per
+    cycle is interpolated to 100 datapoints.
     :param final_dataframe:
     :param individual_cells:
     :param kario_events:
@@ -280,38 +281,39 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
     desired_datapoints = 100
     cols = ["cell", "cycle", "start", "end"]
     cols += range(desired_datapoints)
-    data_interpolated = pd.DataFrame(columns=cols)
+    for data_type in ["Cell_volume", "Nucleus_volume", "N/C_ratio"]:  # interpolate the columns in this list
+        data_interpolated = pd.DataFrame(columns=cols)
 
-    for cell in individual_cells[1:]:  # remove cell pos01_1, since it has too many missing frames
-        single_cell_data = final_dataframe[final_dataframe.Cell_pos == cell]
-        single_cell_data = single_cell_data[~single_cell_data.Nucleus_volume.isnull()]
+        for cell in individual_cells[1:]:  # remove cell pos01_1, since it has too many missing frames
+            single_cell_data = final_dataframe[final_dataframe.Cell_pos == cell]
+            single_cell_data = single_cell_data[~single_cell_data.Nucleus_volume.isnull()]
 
-        count = 0
-        while count < len(kario_events[cell]) - 1:
-            tp1 = kario_events[cell][count]
-            tp2 = kario_events[cell][count + 1]
-            cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
+            count = 0
+            while count < len(kario_events[cell]) - 1:
+                tp1 = kario_events[cell][count]
+                tp2 = kario_events[cell][count + 1]
+                cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
-            # when there are not enough datapoints for this cycle, because of outlier cleaning, then ignore that cycle
-            if len(cell_cycle_dat) < 10:
+                # when there are not enough datapoints (because of outlier removal) for this cycle, ignore it
+                if len(cell_cycle_dat) < 10:
+                    count += 1
+                    continue
+
+                # get the original x and y data
+                x = np.linspace(0, len(cell_cycle_dat), len(cell_cycle_dat))
+                y = cell_cycle_dat[data_type]
+
+                # interpolate the data towards 100 datapoints
+                x_new = np.linspace(0, len(cell_cycle_dat), desired_datapoints)
+                f1 = interpolate.interp1d(x, y, kind='linear')
+                f2 = interpolate.interp1d(x, y, kind='cubic')
+
+                # add the interpolated data to a dataframe
+                data_interpolated.loc[len(data_interpolated)] = [cell, count + 1, tp1, tp2] + f2(x_new).tolist()
                 count += 1
-                continue
 
-            # get the original x and y data
-            x = np.linspace(0, len(cell_cycle_dat), len(cell_cycle_dat))
-            y = cell_cycle_dat['N/C_ratio']
-
-            # interpolate the data towards 100 datapoints
-            x_new = np.linspace(0, len(cell_cycle_dat), desired_datapoints)
-            f1 = interpolate.interp1d(x, y, kind='linear')
-            f2 = interpolate.interp1d(x, y, kind='cubic')
-
-            # add the interpolated data to a dataframe
-            data_interpolated.loc[len(data_interpolated)] = [cell, count + 1, tp1, tp2] + f2(x_new).tolist()
-            count += 1
-
-    data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_script_removed_outliers.xlsx")  # save final file
-    return data_interpolated
+        if data_type == "N/C_ratio": data_type = "NC_ratio"  # cannot save file
+        data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_{data_type}.xlsx")
 
 
 def main():
@@ -319,9 +321,24 @@ def main():
     budding_events, kario_events = load_events()  # load the kyrokinesis and budding events
     individual_cells = sorted(list(set(budj_data["Cell_pos"])))  # how many cells are there in total
 
-    final_dataframe = get_volume_data(budj_data, individual_cells)
-    # TODO Do this for volumes as well
-    interpolated_data = split_cycles_and_interpolate(final_dataframe, final_dataframe, kario_events)
+    # if the entire dataset already exists, prevent generating this again and load it
+    final_dataframe_path = f"{output_dir}excel/nup133_final_data.xlsx"
+    if os.path.exists(final_dataframe_path):
+        print("Volume data has been generated already. The output file exists. loading it from file..")
+        final_dataframe = pd.read_excel(final_dataframe_path)
+    else:
+        print("Generating volume data..")
+        final_dataframe = get_volume_data(budj_data, individual_cells)
+
+    count = 0
+    for filename in os.listdir(f"{output_dir}excel/"):
+        if "cycles_interpolated" in filename:
+            count += 1
+    if count == 3:
+        print("Interpolation has already been performed. Output files exist.")
+    else:
+        split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events)
+
     print("Done.")
 
 
