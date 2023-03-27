@@ -1,4 +1,5 @@
 import os
+import time
 import re
 from math import pi, sin, cos
 import pandas as pd
@@ -332,9 +333,9 @@ def generate_averaged_plots():
     nuc_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_volumes.xlsx")
     nc_ratios_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
     data_list = [
-        ("Cell volume", cell_volumes_interpolated.mean(axis=0)),
-        ("Nuclear volume", nuc_volumes_interpolated.mean(axis=0)),
-        ("N/C ratio", nc_ratios_interpolated.mean(axis=0))
+        ("Cell volume", cell_volumes_interpolated.mean(axis=0, numeric_only=True)),
+        ("Nuclear volume", nuc_volumes_interpolated.mean(axis=0, numeric_only=True)),
+        ("N/C ratio", nc_ratios_interpolated.mean(axis=0, numeric_only=True))
     ]
 
     for data in data_list:
@@ -355,6 +356,7 @@ def generate_averaged_plots():
 
 
 def main():
+    tic = time.perf_counter()
     budj_data = load_all_budj_data()  # load the budj data from all the separate files
     budding_events, kario_events = load_events()  # load the kyrokinesis and budding events
     individual_cells = sorted(list(set(budj_data["Cell_pos"])))  # how many cells are there in total
@@ -379,9 +381,11 @@ def main():
         split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events)
 
     # average the interpolated data and plot the result (cell volume, nucleus volume and N/C ratio)
+    print("Generating the averaged interpolated data plots..")
     generate_averaged_plots()
 
-    print("Done.")
+    toc = time.perf_counter()
+    print(f"Done. Runtime was {toc - tic:0.4f} seconds")
 
 
 # SCRIPT STARTS HERE
