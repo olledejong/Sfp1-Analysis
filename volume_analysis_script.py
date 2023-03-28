@@ -27,7 +27,6 @@ kario_data_path = data_dir + "/Other/Nup133/kariokinesis.txt"  # kariokinesis ev
 ### THRESHOLDING GLOBALS ###
 ############################
 scaling_factor = 0.16  # microns per pixel ---> 100x objective
-scaling_factor2 = 0.016  # microns per pixel ---> 100x objective
 bloc_size_frac_to_use = 0.09  # fraction of the total cell mask pixels that is used as local thresholding block size
 offset_to_use = -50  # offset for local thresholding
 
