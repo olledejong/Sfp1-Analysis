@@ -16,7 +16,7 @@ plt.style.use('seaborn-v0_8')
 #######################
 ### IMPORTANT PATHS ###
 #######################
-data_dir = "/Users/olledejong/Studie/MSc Biology/Research Project V1/Code and data/Data"
+data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data"
 tiff_files_dir = data_dir + "/processed_tiffs_nup133/"  # relative path from data directory to tiff directory
 output_dir = data_dir + "/Output/"  # relative path from data directory to image output directory
 budj_data_folder = data_dir + "/Other/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
@@ -27,6 +27,7 @@ kario_data_path = data_dir + "/Other/Nup133/kariokinesis.txt"  # kariokinesis ev
 ### THRESHOLDING GLOBALS ###
 ############################
 scaling_factor = 0.16  # microns per pixel ---> 100x objective
+scaling_factor2 = 0.016  # microns per pixel ---> 100x objective
 bloc_size_frac_to_use = 0.09  # fraction of the total cell mask pixels that is used as local thresholding block size
 offset_to_use = -50  # offset for local thresholding
 
@@ -151,9 +152,12 @@ def get_area_and_vol(minor_r, major_r):
     :param major_r:
     :return:
     """
-    r1c = (major_r * scaling_factor)  # semi-major axis of the whole cell (from pixels to µm using scaling factor)
-    r2c = (minor_r * scaling_factor)  # semi-minor axis of the whole cell (from pixels to µm using scaling factor)
-    r3c = (np.average((major_r, minor_r)) * scaling_factor)  # third axis of ellipse is average of two known ones
+    # NOTE: When using OpenCV / cv2 for ellipses, the axes that you give the package to drawn an ellipse are radii,
+    # however, what the ellipse fitting provides you with are diameters. In order to calculate areas and volumes we
+    # need to divide the axes by two to get the semi-axes.
+    r1c = (major_r * scaling_factor) / 2  # from pixels to µm using scaling factor
+    r2c = (minor_r * scaling_factor) / 2  # from pixels to µm using scaling factor
+    r3c = (np.average((major_r, minor_r)) * scaling_factor) / 2  # third axis of ellipse is average of two known ones
     volume = (4 / 3) * pi * r1c * r2c * r3c  # µm * µm * µm --> cubic µm
     area = pi * r1c * r2c  # µm * µm --> squared µm
     return area, volume
@@ -188,6 +192,35 @@ def get_whole_cell_mask(t, single_cell_data, image_shape):
     return whole_cell_mask, x_pos, y_pos
 
 
+def remove_outliers(individual_cells, vol_data):
+    """
+    This function removes the outliers based on the Inter Quartile Range approach. This is done both on the
+    nuclear and whole-cell volume columns.
+    :param individual_cells:
+    :param vol_data:
+    :return:
+    """
+    print("Removing outliers from the volume data based on the Inter Quartile Range approach..")
+    data_wo_outliers = pd.DataFrame({})
+    for cell in individual_cells:
+        cell_data = vol_data[vol_data["Cell_pos"] == cell]
+        # for whole-cell volume
+        Q1 = cell_data.Cell_volume.quantile(0.25)
+        Q3 = cell_data.Cell_volume.quantile(0.75)
+        IQR = Q3 - Q1
+        cell_data = cell_data[~((cell_data.Cell_volume < (Q1 - 1.5 * IQR)) | (cell_data.Cell_volume > (Q3 + 1.5 * IQR)))]
+
+        # now for nuclear volume
+        Q1 = cell_data.Nucleus_volume.quantile(0.25)
+        Q3 = cell_data.Nucleus_volume.quantile(0.75)
+        IQR = Q3 - Q1
+        cell_data = cell_data[~((cell_data.Nucleus_volume < (Q1 - 1.5 * IQR)) | (cell_data.Nucleus_volume > (Q3 + 1.5 * IQR)))]
+
+        data_wo_outliers = pd.concat([data_wo_outliers, cell_data])
+
+    return data_wo_outliers
+
+
 def get_volume_data(budj_data, individual_cells):
     """
     The most complex, and by far most compute intensive, function of this script. It goes through all tiff movies and
@@ -198,15 +231,19 @@ def get_volume_data(budj_data, individual_cells):
     :param individual_cells:
     :return:
     """
-    final_dataframe = pd.DataFrame({})
+    nth_cell = 0
+    final_volume_data = pd.DataFrame({})
     for pos in range(1, 21):
+        perc_ranges = pos / 20
         if pos < 10:
             pos = "0" + str(pos)
         pos = str(pos)
         image = imread(os.path.join(f"{tiff_files_dir}2022_12_06_nup133_yegfp_xy{pos}.nd2.tif"))  # load the image
         imageGFP = image[:, 1, :, :]  # get the GFP data
 
-        for cell in [i for i in individual_cells if pos in i]:
+        cells_in_pos = [i for i in individual_cells if pos in i]
+        for cell in cells_in_pos:
+            print(f"Working.. Now at {round(nth_cell / len(individual_cells) * 100)}%", end="\r", flush=True)
             single_cell_data = budj_data[budj_data["Cell_pos"] == cell].sort_values(by="Time")  # get single cell data
             could_not_fit = 0
 
@@ -263,36 +300,63 @@ def get_volume_data(budj_data, individual_cells):
             single_cell_data["N/C_ratio"] = pd.Series(ratios, index=single_cell_data.index, dtype="float64")
 
             # store this cell's data in the final dataframe which eventually contains data of all cells
-            final_dataframe = pd.concat([final_dataframe, single_cell_data])
-            print(f"{cell} - Couldn't fit ellipse {could_not_fit} out of {len(single_cell_data['TimeID'])} times")
+            final_volume_data = pd.concat([final_volume_data, single_cell_data])
+            # print(f"{cell} - Couldn't fit ellipse {could_not_fit} out of {len(single_cell_data['TimeID'])} times")
+            nth_cell += 1
 
-    # remove unrealistic N/C ratios
-    final_dataframe = final_dataframe.drop(final_dataframe[final_dataframe["N/C_ratio"] > .32].index)
-    final_dataframe = final_dataframe.reset_index(drop=True)  # reset index of dataframe
-    final_dataframe.to_excel(f"{output_dir}excel/nup133_final_data.xlsx")  # save the final file
-    return final_dataframe
+    # final_volume_data = remove_outliers(individual_cells, final_volume_data)  # remove outliers
+    final_volume_data = final_volume_data.reset_index(drop=True)  # reset index of dataframe
+    final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data.xlsx")  # save the final file
+    return final_volume_data
 
 
-def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events):
+def generate_separate_volume_plots(individual_cells, final_volume_data):
+    """
+    Creates a separate plot for every cell that displays the nuclear and whole-cell volumes
+    together. This might give a good overview on the data quality per cell.
+    :param individual_cells:
+    :param final_volume_data:
+    :return:
+    """
+    for cell in individual_cells:
+        fig, axs = plt.subplots(2, figsize=(5, 5))
+        fig.supxlabel("Time (frames)")
+        fig.supylabel("Volume (µm\u00b3)")
+        fig.subplots_adjust(hspace=0.35, wspace=0.4)
+        fig.suptitle(f"{cell} - Whole cell and nuclear volumes over time")
+        single_cell_data = final_volume_data[final_volume_data.Cell_pos == cell]
+        single_cell_data = single_cell_data[~single_cell_data.Nucleus_volume.isnull()]
+
+        axs[0].plot(single_cell_data.TimeID, single_cell_data.Cell_volume, 'or')
+        axs[0].set_title("Whole cell volume", fontstyle='italic', y=1.02)
+        axs[1].plot(single_cell_data.TimeID, single_cell_data.Nucleus_volume, 'oy')
+        axs[1].set_title("Nuclear volume", fontstyle='italic', y=1.02)
+        plt.savefig(f"{output_dir}/plots/separate_cell_plots/with_outliers/{cell}_volumes_overT.png", bbox_inches='tight', dpi=300)
+        plt.close(fig)
+
+
+def split_cycles_and_interpolate(final_volume_data, individual_cells, kario_events):
     """
     Function responsible splitting the data of each cell on kariokinesis events, where after the data per
     cycle is interpolated to 100 datapoints.
 
-    :param final_dataframe:
+    :param final_volume_data:
     :param individual_cells:
     :param kario_events:
     :return:
     """
+    min_datapoints_for_interpolation = 14
     desired_datapoints = 100
     cols = ["cell", "cycle", "start", "end"]
     cols += range(desired_datapoints)
 
     interpolated_dataframes = []
     for data_type in ["Cell_volume", "Nucleus_volume", "N/C_ratio"]:  # interpolate the columns in this list
+        tot_under = 0
         data_interpolated = pd.DataFrame(columns=cols)
 
         for cell in individual_cells[1:]:  # remove cell pos01_1, since it has too many missing frames
-            single_cell_data = final_dataframe[final_dataframe.Cell_pos == cell]
+            single_cell_data = final_volume_data[final_volume_data.Cell_pos == cell]
             single_cell_data = single_cell_data[~single_cell_data.Nucleus_volume.isnull()]
 
             count = 0
@@ -302,7 +366,8 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
                 # when there are not enough datapoints (because of outlier removal) for this cycle, ignore it
-                if len(cell_cycle_dat) < 10:
+                if len(cell_cycle_dat) < min_datapoints_for_interpolation:
+                    tot_under += 1
                     count += 1
                     continue
 
@@ -322,6 +387,8 @@ def split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events
         if data_type == "N/C_ratio": data_type = "NC_ratio"  # cannot save file
         data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_{data_type}s.xlsx")
         interpolated_dataframes.append(data_interpolated)
+        print(f"For the datatype {data_type}, there were {tot_under} cycles removed from the final dataframe since "
+              f"they had less than {min_datapoints_for_interpolation} datapoints")
     return interpolated_dataframes
 
 
@@ -348,7 +415,7 @@ def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated,
             plt.ylabel(data[0])
         filename = "NC ratio" if data[0] == "N/C ratio" else data[0]
         plt.savefig(
-            f"{output_dir}plots/interpolated_averaged/{filename}.png",
+            f"{output_dir}plots/interpolated_averaged/with_outliers/{filename}.png",
             bbox_inches='tight',
             dpi=350
         )
@@ -370,14 +437,16 @@ def generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interp
 
     # also generate one with nuc and cell volume together
     fig, ax1 = plt.subplots()
+    fig.suptitle("Whole-cell and nuclear volumes over time (interpolated & averaged)")
 
     ax1.set_xlabel('Time')
+    ax1.grid(False)
     ax1.set_ylabel("Cell volume (µm\u00b3)", color='tab:red')
     ax1.plot(cell_volumes_interpolated[4:].values, color='tab:red')
     ax1.tick_params(axis='y', labelcolor='tab:red')
 
     ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-
+    ax2.grid(False)
     ax2.set_ylabel("Nucleus volume (µm\u00b3)", color='tab:blue')
     ax2.plot(nuc_volumes_interpolated[4:].values, color='tab:blue')
     ax2.tick_params(axis='y', labelcolor='tab:blue')
@@ -397,14 +466,17 @@ def main():
     individual_cells = sorted(list(set(budj_data["Cell_pos"])))  # how many cells are there in total
 
     # if volume dataset already exists, prevent generating this again and load it
-    final_dataframe_path = f"{output_dir}excel/nup133_final_data.xlsx"
+    final_dataframe_path = f"{output_dir}excel/nup133_volume_data_with_outliers.xlsx"
     if os.path.exists(final_dataframe_path):
         print("Volume data has been generated already. The output file exists. loading it from file..")
-        final_dataframe = pd.read_excel(final_dataframe_path)
+        final_volume_data = pd.read_excel(final_dataframe_path)
     else:
         print("Generating volume data..")
-        final_dataframe = get_volume_data(budj_data, individual_cells)
-
+        final_volume_data = get_volume_data(budj_data, individual_cells)
+    
+    # generate a combined volumes plot for all cells separate
+    generate_separate_volume_plots(individual_cells, final_volume_data)
+    
     # check if cycles have been split and interpolated, if not, do this
     count = 0
     for filename in os.listdir(f"{output_dir}excel/"):
@@ -418,7 +490,7 @@ def main():
         nc_ratios_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
     else:
         print("Performing interpolation on cell volume, nuc volume and n/c ratio data..")
-        interpolated_dataframes = split_cycles_and_interpolate(final_dataframe, individual_cells, kario_events)
+        interpolated_dataframes = split_cycles_and_interpolate(final_volume_data, individual_cells, kario_events)
         cell_volumes_interpolated = interpolated_dataframes[0]
         nuc_volumes_interpolated = interpolated_dataframes[1]
         nc_ratios_interpolated = interpolated_dataframes[2]
@@ -428,7 +500,8 @@ def main():
     generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated)
 
     toc = time.perf_counter()
-    print(f"Done. Runtime was {toc - tic:0.4f} seconds")
+    secs = round(toc - tic, 4)
+    print(f"Done. Runtime was {secs} seconds ({round(secs / 60, 2)} minutes)")
 
 
 # SCRIPT STARTS HERE
