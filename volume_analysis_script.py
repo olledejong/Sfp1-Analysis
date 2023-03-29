@@ -326,11 +326,11 @@ def generate_separate_volume_plots(individual_cells, final_volume_data):
         single_cell_data = final_volume_data[final_volume_data.Cell_pos == cell]
         single_cell_data = single_cell_data[~single_cell_data.Nucleus_volume.isnull()]
 
-        axs[0].plot(single_cell_data.TimeID, single_cell_data.Cell_volume, 'or')
+        axs[0].plot(single_cell_data.TimeID, single_cell_data.Cell_volume, 'r')
         axs[0].set_title("Whole cell volume", fontstyle='italic', y=1.02)
-        axs[1].plot(single_cell_data.TimeID, single_cell_data.Nucleus_volume, 'oy')
+        axs[1].plot(single_cell_data.TimeID, single_cell_data.Nucleus_volume, 'y')
         axs[1].set_title("Nuclear volume", fontstyle='italic', y=1.02)
-        plt.savefig(f"{output_dir}/plots/separate_cell_plots/with_outliers/{cell}_volumes_overT.png", bbox_inches='tight', dpi=300)
+        plt.savefig(f"{output_dir}/plots/separate_cell_plots/{cell}_volumes_overT.png", bbox_inches='tight', dpi=300)
         plt.close(fig)
 
 
@@ -465,7 +465,7 @@ def main():
     individual_cells = sorted(list(set(budj_data["Cell_pos"])))  # how many cells are there in total
 
     # if volume dataset already exists, prevent generating this again and load it
-    final_dataframe_path = f"{output_dir}excel/nup133_volume_data_with_outliers.xlsx"
+    final_dataframe_path = f"{output_dir}excel/nup133_volume_data.xlsx"
     if os.path.exists(final_dataframe_path):
         print("Volume data has been generated already. The output file exists. loading it from file..")
         final_volume_data = pd.read_excel(final_dataframe_path)
