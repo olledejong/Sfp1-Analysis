@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import re
 from math import pi, sin, cos
@@ -34,6 +35,25 @@ offset_to_use = -50  # offset for local thresholding
 #################
 ### FUNCTIONS ###
 #################
+def save_figure(path, bbox_inches='tight', dpi=300):
+    """
+    Custom function that lets you save a pyplot figure and creates the directory where necessary
+    """
+    directory = os.path.split(path)[0]
+    filename = os.path.split(path)[1]
+    if directory == '':
+        directory = '.'
+
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    savepath = os.path.join(directory, filename)
+
+    # Actually save the figure
+    plt.savefig(savepath, bbox_inches=bbox_inches, dpi=dpi)
+    plt.close()
+
+
 def ellipse_from_budj(t, cell_data):
     """
     Define the function that can extract parameters of the ellipse using the data
@@ -318,6 +338,8 @@ def generate_separate_volume_plots(individual_cells, final_volume_data):
     :return:
     """
     for cell in individual_cells:
+        print(f"Generating volume plot per cell, {round(individual_cells.index(cell) / len(individual_cells) * 100)}% "
+              f"done..", end="\r", flush=True)
         fig, axs = plt.subplots(2, figsize=(5, 5))
         fig.supxlabel("Time (frames)")
         fig.supylabel("Volume (µm\u00b3)")
@@ -330,8 +352,7 @@ def generate_separate_volume_plots(individual_cells, final_volume_data):
         axs[0].set_title("Whole cell volume", fontstyle='italic', y=1.02)
         axs[1].plot(single_cell_data.TimeID, single_cell_data.Nucleus_volume, 'y')
         axs[1].set_title("Nuclear volume", fontstyle='italic', y=1.02)
-        plt.savefig(f"{output_dir}/plots/separate_cell_plots/{cell}_volumes_overT.png", bbox_inches='tight', dpi=300)
-        plt.close(fig)
+        save_figure(f"{output_dir}/plots/separate_cell_plots/{cell}_volumes_overT.png")
 
 
 def split_cycles_and_interpolate(final_volume_data, individual_cells, kario_events):
@@ -391,13 +412,38 @@ def split_cycles_and_interpolate(final_volume_data, individual_cells, kario_even
     return interpolated_dataframes
 
 
+def generate_interpolated_cycle_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated):
+    interpolated_dataframes = [
+        ("Cell volume", cell_volumes_interpolated, "Cell volume (µm\u00b3)"),
+        ("Nucleus volume", nuc_volumes_interpolated, "Nucleus volume (µm\u00b3)"),
+        ("NC ratio", nc_ratios_interpolated, "N/C ratio")
+    ]
+    progress = 1
+    total_runs = len(cell_volumes_interpolated) + len(nuc_volumes_interpolated) + len(nc_ratios_interpolated)
+    for interpolated_dataframe in interpolated_dataframes:
+        count = 0
+        data_type = interpolated_dataframe[0]
+        while count < len(interpolated_dataframe[1]):
+            print(f"Generating interpolated cycle plots, {round(progress / total_runs * 100)}% done..", end="\r", flush=True)
+            single_cycle_data = interpolated_dataframe[1].iloc[count]
+            plt.plot(single_cycle_data[5:].values, 'r', linewidth=3)
+            cell_name = single_cycle_data['cell']
+            cycle_id = single_cycle_data['cycle']
+            plt.title(f"{cell_name}, cycle {cycle_id}, {data_type} (interpolated)", fontstyle='italic', y=1.02)
+            plt.xlabel("Time")
+            plt.ylabel(interpolated_dataframe[2])
+            save_figure(f"{output_dir}plots/separate_cell_plots/interpolated_cycles/{data_type}/{cell_name}_cycle{cycle_id}.png")
+            count += 1
+            progress += 1
+
+
 def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated):
     """
     Takes the interpolated data files (Excel files) and averages these. The averages are plotted over time and
     saved to the user's system.
-
     :return:
     """
+    print("Generating the averaged interpolated data plots..")
     data_list = [  # average the interpolated cycles
         ("Cell volume", cell_volumes_interpolated.mean(axis=0, numeric_only=True), "µm\u00b3"),
         ("Nuclear volume", nuc_volumes_interpolated.mean(axis=0, numeric_only=True), "µm\u00b3"),
@@ -413,12 +459,7 @@ def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated,
         else:
             plt.ylabel(data[0])
         filename = "NC ratio" if data[0] == "N/C ratio" else data[0]
-        plt.savefig(
-            f"{output_dir}plots/interpolated_averaged/with_outliers/{filename}.png",
-            bbox_inches='tight',
-            dpi=350
-        )
-        plt.close()
+        save_figure(f"{output_dir}plots/interpolated_averaged/with_outliers/{filename}.png")
 
     generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated)
 
@@ -450,16 +491,23 @@ def generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interp
     ax2.plot(nuc_volumes_interpolated[4:].values, color='tab:blue')
     ax2.tick_params(axis='y', labelcolor='tab:blue')
 
-    plt.savefig(
-        f"{output_dir}plots/interpolated_averaged/Volumes_together.png",
-        bbox_inches='tight',
-        dpi=350
-    )
-    plt.close()
+    save_figure(f"{output_dir}plots/interpolated_averaged/Volumes_together.png")
 
 
-def main():
-    tic = time.perf_counter()
+def main(argv):
+    tic = time.perf_counter()  # start counter
+
+    # argument handling
+    do_plot = True
+    if len(argv) != 0:
+        if argv[0] == 'no_plots':
+            do_plot = False
+        elif argv[0] in ['-h', 'help']:
+            print('If you would like to skip generating any plots, execute the script like this:\n\n'
+                  'volume_analysis_script.py no_plots')
+            sys.exit(2)
+
+    # start of logic
     budj_data = load_all_budj_data()  # load the budj data from all the separate files
     budding_events, kario_events = load_events()  # load the kyrokinesis and budding events
     individual_cells = sorted(list(set(budj_data["Cell_pos"])))  # how many cells are there in total
@@ -467,15 +515,15 @@ def main():
     # if volume dataset already exists, prevent generating this again and load it
     final_dataframe_path = f"{output_dir}excel/nup133_volume_data.xlsx"
     if os.path.exists(final_dataframe_path):
-        print("Volume data has been generated already. The output file exists. loading it from file..")
+        print("Volume data has been generated already. The output file exists.")
         final_volume_data = pd.read_excel(final_dataframe_path)
     else:
         print("Generating volume data..")
         final_volume_data = get_volume_data(budj_data, individual_cells)
     
     # generate a combined volumes plot for all cells separate
-    generate_separate_volume_plots(individual_cells, final_volume_data)
-    
+    if do_plot: generate_separate_volume_plots(individual_cells, final_volume_data)
+
     # check if cycles have been split and interpolated, if not, do this
     count = 0
     for filename in os.listdir(f"{output_dir}excel/"):
@@ -483,7 +531,7 @@ def main():
             count += 1
     if count == 3:
         # load the interpolated files
-        print("Interpolation has already been performed. Output files exist. Loading them..")
+        print("Interpolation has already been performed. Output files exist.")
         cell_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Cell_volumes.xlsx")
         nuc_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_volumes.xlsx")
         nc_ratios_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
@@ -494,9 +542,11 @@ def main():
         nuc_volumes_interpolated = interpolated_dataframes[1]
         nc_ratios_interpolated = interpolated_dataframes[2]
 
+    # generate a plot per interpolated cycle
+    if do_plot: generate_interpolated_cycle_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated)
+
     # average the interpolated data and plot the result (cell volume, nucleus volume and N/C ratio)
-    print("Generating the averaged interpolated data plots..")
-    generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated)
+    if do_plot: generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated)
 
     toc = time.perf_counter()
     secs = round(toc - tic, 4)
@@ -505,4 +555,4 @@ def main():
 
 # SCRIPT STARTS HERE
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
