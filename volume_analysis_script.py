@@ -20,9 +20,9 @@ plt.style.use('seaborn-v0_8')
 data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data"
 tiff_files_dir = data_dir + "/processed_tiffs_nup133/"  # relative path from data directory to tiff directory
 output_dir = data_dir + "/Output/"  # relative path from data directory to image output directory
-budj_data_folder = data_dir + "/Other/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
-budding_data_path = data_dir + "/Other/Nup133/buddings.txt"  # budding events
-kario_data_path = data_dir + "/Other/Nup133/kariokinesis.txt"  # kariokinesis events
+budj_data_folder = data_dir + "/Input/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
+budding_data_path = data_dir + "/Input/Nup133/buddings.txt"  # budding events
+kario_data_path = data_dir + "/Input/Nup133/kariokinesis.txt"  # kariokinesis events
 
 ############################
 ### THRESHOLDING GLOBALS ###
@@ -98,9 +98,9 @@ def load_budj_files():
     # find all the files that hold budj data
     files = []
     for filename in os.listdir(budj_data_folder):
-        if ".csv" in filename:
-            prefix_position = f"pos{filename[-25:-23]}_"
-            files.append((filename, prefix_position))
+        if "with_daughters.csv" in filename:
+            cell_name = f"pos{filename[2:6]}"
+            files.append((filename, cell_name))
     return files
 
 
@@ -110,24 +110,26 @@ def load_all_budj_data():
     :return:
     """
     files = load_budj_files()  # get the separate files
-
-    # convert time_ids to real time minutes
-    TimeIDs = range(1, 151)  # TimeIDs range 1 through 150
-    time_conversion = pd.DataFrame({
-        "TimeID": TimeIDs,
-        "Time": [x * 5 for x in TimeIDs]
-    })
-
     # add the data of all files to one single dataframe
     budj_data = pd.DataFrame({})
-    for f in files:
-        pos_data = pd.read_csv(budj_data_folder + f[0], header=0, index_col=0)
-        pos_data["Cell_pos"] = f[1] + pos_data["Cell"].map(str)
-        pos_data = pos_data.loc[:, ["TimeID", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
-        budj_data = pd.concat([budj_data, pos_data])
+    for filename, cell_name in files:
+        # mother with daughter(s) data
+        pos_data = pd.read_csv(budj_data_folder + filename, header=0, index_col=0)
+        pos_data["Cell_pos"] = None
+        temp_data = pd.DataFrame(columns=pos_data.columns)
+        # name the cells correctly, the mother's name is unchanged, but the daughters are now recognizable
+        for index, row in pos_data.iterrows():
+            row["Cell_pos"] = cell_name if row["Cell"] == 1 else f"{cell_name}_d{round(row['Cell'] - 1)}"
+            temp_data.loc[len(temp_data) + 1] = row.values
 
-    budj_data = pd.merge(budj_data, time_conversion, on="TimeID")
-    budj_data = budj_data.sort_values(["Cell_pos", "TimeID"])
+        # keep only the following columns
+        temp_data = temp_data.loc[:, ["TimeID", "Time (min)", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
+
+        # save the mother + daughter data to the bigger dataframe holding data for all mothers + daughters
+        budj_data = pd.concat([budj_data, temp_data])
+
+    # sort on cell pos and time-frame
+    budj_data = budj_data.sort_values(["Cell_pos", "TimeID"]).reset_index(drop=True)
     return budj_data
 
 
@@ -240,6 +242,16 @@ def remove_outliers(individual_cells, vol_data):
     return data_wo_outliers
 
 
+def read_images():
+    images = {}
+    for pos in range(1, 21):
+        if pos < 10:
+            pos = "0" + str(pos)
+        pos = str(pos)
+        images[pos] = imread(os.path.join(f"{tiff_files_dir}2022_12_06_nup133_yegfp_xy{pos}.nd2.tif"))  # load the image
+    return images
+
+
 def get_volume_data(budj_data, individual_cells):
     """
     The most complex, and by far most compute intensive, function of this script. It goes through all tiff movies and
@@ -250,19 +262,19 @@ def get_volume_data(budj_data, individual_cells):
     :param individual_cells:
     :return:
     """
+    images = read_images()
     nth_cell = 0
     final_volume_data = pd.DataFrame({})
     for pos in range(1, 21):
-        perc_ranges = pos / 20
         if pos < 10:
             pos = "0" + str(pos)
         pos = str(pos)
-        image = imread(os.path.join(f"{tiff_files_dir}2022_12_06_nup133_yegfp_xy{pos}.nd2.tif"))  # load the image
+        image = images[pos]
         imageGFP = image[:, 1, :, :]  # get the GFP data
 
         cells_in_pos = [i for i in individual_cells if pos in i]
         for cell in cells_in_pos:
-            print(f"Working.. Now at {round(nth_cell / len(individual_cells) * 100)}%", end="\r", flush=True)
+            print(f"Working, now at {round(nth_cell / len(individual_cells) * 100)}%..", end="\r", flush=True)
             single_cell_data = budj_data[budj_data["Cell_pos"] == cell].sort_values(by="Time")  # get single cell data
             could_not_fit = 0
 
@@ -323,7 +335,7 @@ def get_volume_data(budj_data, individual_cells):
             # print(f"{cell} - Couldn't fit ellipse {could_not_fit} out of {len(single_cell_data['TimeID'])} times")
             nth_cell += 1
 
-    # final_volume_data = remove_outliers(individual_cells, final_volume_data)  # remove outliers
+    final_volume_data = remove_outliers(individual_cells, final_volume_data)  # remove outliers
     final_volume_data = final_volume_data.reset_index(drop=True)  # reset index of dataframe
     final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data.xlsx")  # save the final file
     return final_volume_data
@@ -365,7 +377,7 @@ def split_cycles_and_interpolate(final_volume_data, individual_cells, kario_even
     :param kario_events:
     :return:
     """
-    min_datapoints_for_interpolation = 14
+    min_datapoints_for_interpolation = 10
     desired_datapoints = 100
     cols = ["cell", "cycle", "start", "end"]
     cols += range(desired_datapoints)
@@ -382,7 +394,7 @@ def split_cycles_and_interpolate(final_volume_data, individual_cells, kario_even
             count = 0
             while count < len(kario_events[cell]) - 1:
                 tp1 = kario_events[cell][count]
-                tp2 = kario_events[cell][count + 1]
+                tp2 = kario_events[cell][count + 1] + 1  # extend by a frame to see real impact of karyokinesis
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
                 # when there are not enough datapoints (because of outlier removal) for this cycle, ignore it
@@ -459,7 +471,7 @@ def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated,
         else:
             plt.ylabel(data[0])
         filename = "NC ratio" if data[0] == "N/C ratio" else data[0]
-        save_figure(f"{output_dir}plots/interpolated_averaged/with_outliers/{filename}.png")
+        save_figure(f"{output_dir}plots/interpolated_averaged/{filename}.png")
 
     generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated)
 
@@ -556,3 +568,4 @@ def main(argv):
 # SCRIPT STARTS HERE
 if __name__ == "__main__":
     main(sys.argv[1:])
+    sys.exit(0)
