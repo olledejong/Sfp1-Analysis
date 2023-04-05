@@ -109,6 +109,7 @@ def load_all_budj_data():
     Collects all file names and using that, all BudJ data is loaded from the files
     :return:
     """
+    print("Loading all BudJ excel files..", end="\r", flush=True)
     files = load_budj_files()  # get the separate files
     # add the data of all files to one single dataframe
     budj_data = pd.DataFrame({})
@@ -123,13 +124,15 @@ def load_all_budj_data():
             temp_data.loc[len(temp_data) + 1] = row.values
 
         # keep only the following columns
-        temp_data = temp_data.loc[:, ["TimeID", "Time (min)", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
+        temp_data = temp_data.loc[:,
+                    ["TimeID", "Time (min)", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
 
         # save the mother + daughter data to the bigger dataframe holding data for all mothers + daughters
         budj_data = pd.concat([budj_data, temp_data])
 
     # sort on cell pos and time-frame
     budj_data = budj_data.sort_values(["Cell_pos", "TimeID"]).reset_index(drop=True)
+    print("Loading all BudJ excel files.. Done!")
     return budj_data
 
 
@@ -229,13 +232,15 @@ def remove_outliers(individual_cells, vol_data):
         Q1 = cell_data.Cell_volume.quantile(0.25)
         Q3 = cell_data.Cell_volume.quantile(0.75)
         IQR = Q3 - Q1
-        cell_data = cell_data[~((cell_data.Cell_volume < (Q1 - 1.5 * IQR)) | (cell_data.Cell_volume > (Q3 + 1.5 * IQR)))]
+        cell_data = cell_data[
+            ~((cell_data.Cell_volume < (Q1 - 1.5 * IQR)) | (cell_data.Cell_volume > (Q3 + 1.5 * IQR)))]
 
         # now for nuclear volume
         Q1 = cell_data.Nucleus_volume.quantile(0.25)
         Q3 = cell_data.Nucleus_volume.quantile(0.75)
         IQR = Q3 - Q1
-        cell_data = cell_data[~((cell_data.Nucleus_volume < (Q1 - 1.5 * IQR)) | (cell_data.Nucleus_volume > (Q3 + 1.5 * IQR)))]
+        cell_data = cell_data[
+            ~((cell_data.Nucleus_volume < (Q1 - 1.5 * IQR)) | (cell_data.Nucleus_volume > (Q3 + 1.5 * IQR)))]
 
         data_wo_outliers = pd.concat([data_wo_outliers, cell_data])
 
@@ -243,112 +248,127 @@ def remove_outliers(individual_cells, vol_data):
 
 
 def read_images():
+    print("Reading tiff images..", end="\r", flush=True)
     images = {}
     for pos in range(1, 21):
         if pos < 10:
             pos = "0" + str(pos)
         pos = str(pos)
         images[pos] = imread(os.path.join(f"{tiff_files_dir}2022_12_06_nup133_yegfp_xy{pos}.nd2.tif"))  # load the image
+    print("Reading tiff images.. Done!")
     return images
 
 
-def get_volume_data(budj_data, individual_cells):
+def add_daughter_volumes(single_cell_data, daughters_data):
+    pass
+
+
+def get_volume_data(budj_data):
     """
     The most complex, and by far most compute intensive, function of this script. It goes through all tiff movies and
     all cells, and for each cell it loops over all frame in the movie. For every frame, local thresholding is performed,
     and an ellipse is fitted. Using this ellipse, the volume is calculated. It all is stored within one dataframe.
 
     :param budj_data:
-    :param individual_cells:
     :return:
     """
-    images = read_images()
-    nth_cell = 0
-    final_volume_data = pd.DataFrame({})
-    for pos in range(1, 21):
-        if pos < 10:
-            pos = "0" + str(pos)
-        pos = str(pos)
-        image = images[pos]
-        imageGFP = image[:, 1, :, :]  # get the GFP data
+    tiff_images = read_images()  # load all images at once, we need them all anyway
+    print("Generating volume data..", end="\r", flush=True)
+    final_volume_data = pd.DataFrame({})  # create an empty dataframe to eventually store all data in
+    individual_cells = sorted([x for x in budj_data["Cell_pos"].unique() if 'd' not in x])
 
-        cells_in_pos = [i for i in individual_cells if pos in i]
-        for cell in cells_in_pos:
-            print(f"Working, now at {round(nth_cell / len(individual_cells) * 100)}%..", end="\r", flush=True)
-            single_cell_data = budj_data[budj_data["Cell_pos"] == cell].sort_values(by="Time")  # get single cell data
-            could_not_fit = 0
+    nth_cell = 0  # let's keep track of how many cells we've handled
+    for cell in individual_cells:
+        image = tiff_images[cell[3:5]]  # get the image in which this specific cell is located
+        imageGFP = image[:, 1, :, :]  # get the GFP data only
 
-            cell_areas, nuc_areas, cell_volumes, nuc_volumes = [], [], [], []
-            for t in single_cell_data.TimeID:
-                t_in_tiff = t - 1  # skew the time by one for tiff dataframe
-                imageGFP_at_frame = imageGFP[t_in_tiff, :, :]  # get the GFP data
+        print(f"Working, now at {round(nth_cell / len(individual_cells) * 100)}%..", end="\r", flush=True)
+        single_cell_data = budj_data[budj_data["Cell_pos"] == cell].sort_values(by="TimeID")
+        daughters_data = budj_data[budj_data["Cell_pos"].str.contains(f"{cell}_d")].sort_values(by="TimeID")
 
-                # get the cell mask through budj data
-                whole_cell_mask, x_pos, y_pos = get_whole_cell_mask(t, single_cell_data, imageGFP_at_frame.shape)
-                imageGFP_cell_mask = imageGFP_at_frame * whole_cell_mask  # keep only cell data
+        cell_areas, nuc_areas, cell_volumes, nuc_volumes = [], [], [], []
+        for t in single_cell_data.TimeID:
+            t_in_tiff = t - 1  # skew the time by one for tiff dataframe
+            imageGFP_at_frame = imageGFP[t_in_tiff, :, :]  # get the GFP data
+            
+            # WHOLE CELL #
 
-                num_cell_pixels = np.count_nonzero(whole_cell_mask == True)
-                bloc_size_cell_size_dependent = round_up_to_odd(bloc_size_frac_to_use * num_cell_pixels)
+            # get whole-cell area and volume
+            whole_cell_mask, x_pos, y_pos = get_whole_cell_mask(t, single_cell_data, imageGFP_at_frame.shape)
+            (c_x, c_y), (c_MA, c_ma), c_angle = get_ellipse(imageGFP_at_frame, whole_cell_mask)
+            cell_area, cell_volume = get_area_and_vol(c_ma, c_MA)
 
-                nucl_thresh_mask_local = threshold_local(
-                    image=imageGFP_cell_mask,
-                    block_size=bloc_size_cell_size_dependent,
-                    offset=offset_to_use
-                )
-                imageGFP_nuc_mask_local = remove_small_objects(imageGFP_cell_mask > nucl_thresh_mask_local)
+            # check if there is a daughter at this frame; if so, add the area/volume of the daughter to the mother
+            if t in daughters_data.TimeID.values:
+                # get the daughter whole_cell_mask
+                whole_cell_mask_daughter, x_pos, y_pos = get_whole_cell_mask(t, daughters_data, imageGFP_at_frame.shape)
+                # fit the daughter cell ellipse
+                (d_x, d_y), (d_MA, d_ma), d_angle = get_ellipse(imageGFP_at_frame, whole_cell_mask_daughter)
+                # get daughter cell area and volume and add it to the mother's data
+                daughter_area, daughter_volume = get_area_and_vol(d_ma, d_MA)
+                cell_area += daughter_area
+                cell_volume += daughter_volume
 
-                # save cell area and volume to dataframe
-                (c_x, c_y), (c_MA, c_ma), c_angle = get_ellipse(imageGFP_at_frame, whole_cell_mask)  # fit ellipse cell
-                cell_area, cell_volume = get_area_and_vol(c_ma, c_MA)  # get the area and volume of the cell
-                cell_areas.append(cell_area)
-                cell_volumes.append(cell_volume)
+            cell_areas.append(cell_area)
+            cell_volumes.append(cell_volume)
+            
+            # NUCLEUS #
 
-                # try to fit the ellipse on the nucleus, if there is none, then add None to the list
-                try:
-                    (x, y), (MA, ma), angle = get_ellipse(imageGFP_at_frame, imageGFP_nuc_mask_local)
-                except Exception:
-                    # thresholding did not lead to an ellipse, nucleus was probably out of focus
-                    could_not_fit += 1
-                    nuc_volumes.append(None)
-                    nuc_areas.append(None)
-                    continue
+            imageGFP_cell_mask = imageGFP_at_frame * whole_cell_mask  # keep only data within the whole cell mask
+            num_cell_pixels = np.count_nonzero(whole_cell_mask == True)  # count number of pixels in that mask
+            bloc_size_cell_size_dependent = round_up_to_odd(bloc_size_frac_to_use * num_cell_pixels)
+            nucl_thresh_mask_local = threshold_local(
+                image=imageGFP_cell_mask,
+                block_size=bloc_size_cell_size_dependent,
+                offset=offset_to_use
+            )
+            imageGFP_nuc_mask_local = remove_small_objects(imageGFP_cell_mask > nucl_thresh_mask_local)
 
-                # save nucleus area and volume to dataframe
-                nuc_area, nuc_volume = get_area_and_vol(ma, MA)
-                nuc_areas.append(nuc_area)
-                nuc_volumes.append(nuc_volume)
+            # try to fit the ellipse on the nucleus, if the nucleus is out of focus, then add None to the list
+            try:
+                (x, y), (MA, ma), angle = get_ellipse(imageGFP_at_frame, imageGFP_nuc_mask_local)
+            except Exception:
+                # thresholding did not lead to an ellipse, nucleus was probably out of focus
+                nuc_volumes.append(None)
+                nuc_areas.append(None)
+                continue
 
-            # calculate the ratios
-            ratios = []
-            for i in range(0, len(nuc_volumes)):
-                ratios.append(None) if nuc_volumes[i] is None else ratios.append(nuc_volumes[i] / cell_volumes[i])
+            # save nucleus area and volume to dataframe
+            nuc_area, nuc_volume = get_area_and_vol(ma, MA)
+            nuc_areas.append(nuc_area)
+            nuc_volumes.append(nuc_volume)
 
-            # store data in this cell its dataframe
-            single_cell_data["Cell_area"] = pd.Series(cell_areas, index=single_cell_data.index, dtype="float64")
-            single_cell_data["Cell_volume"] = pd.Series(cell_volumes, index=single_cell_data.index, dtype="float64")
-            single_cell_data["Nucleus_area"] = pd.Series(nuc_areas, index=single_cell_data.index, dtype="float64")
-            single_cell_data["Nucleus_volume"] = pd.Series(nuc_volumes, index=single_cell_data.index, dtype="float64")
-            single_cell_data["N/C_ratio"] = pd.Series(ratios, index=single_cell_data.index, dtype="float64")
+        # calculate the ratios
+        ratios = []
+        for i in range(0, len(nuc_volumes)):
+            ratios.append(None) if nuc_volumes[i] is None else ratios.append(nuc_volumes[i] / cell_volumes[i])
 
-            # store this cell's data in the final dataframe which eventually contains data of all cells
-            final_volume_data = pd.concat([final_volume_data, single_cell_data])
-            # print(f"{cell} - Couldn't fit ellipse {could_not_fit} out of {len(single_cell_data['TimeID'])} times")
-            nth_cell += 1
+        # store data in this cell its dataframe
+        single_cell_data["Cell_area"] = pd.Series(cell_areas, index=single_cell_data.index, dtype="float64")
+        single_cell_data["Cell_volume"] = pd.Series(cell_volumes, index=single_cell_data.index, dtype="float64")
+        single_cell_data["Nucleus_area"] = pd.Series(nuc_areas, index=single_cell_data.index, dtype="float64")
+        single_cell_data["Nucleus_volume"] = pd.Series(nuc_volumes, index=single_cell_data.index, dtype="float64")
+        single_cell_data["N/C_ratio"] = pd.Series(ratios, index=single_cell_data.index, dtype="float64")
+
+        # store this cell's data in the final dataframe which eventually contains data of all cells
+        final_volume_data = pd.concat([final_volume_data, single_cell_data])
+        nth_cell += 1
 
     final_volume_data = remove_outliers(individual_cells, final_volume_data)  # remove outliers
     final_volume_data = final_volume_data.reset_index(drop=True)  # reset index of dataframe
-    final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data.xlsx")  # save the final file
+    final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data_test_daughters.xlsx")  # save the final file
+    print("Generating volume data.. Done!")
     return final_volume_data
 
 
-def generate_separate_volume_plots(individual_cells, final_volume_data):
+def generate_separate_volume_plots(final_volume_data):
     """
     Creates a separate plot for every cell that displays the nuclear and whole-cell volumes
     together. This might give a good overview on the data quality per cell.
-    :param individual_cells:
     :param final_volume_data:
     :return:
     """
+    individual_cells = sorted(list(set(final_volume_data["Cell_pos"])))  # how many cells are there in total
     for cell in individual_cells:
         print(f"Generating volume plot per cell, {round(individual_cells.index(cell) / len(individual_cells) * 100)}% "
               f"done..", end="\r", flush=True)
@@ -367,16 +387,15 @@ def generate_separate_volume_plots(individual_cells, final_volume_data):
         save_figure(f"{output_dir}/plots/separate_cell_plots/{cell}_volumes_overT.png")
 
 
-def split_cycles_and_interpolate(final_volume_data, individual_cells, kario_events):
+def split_cycles_and_interpolate(final_volume_data, kario_events):
     """
-    Function responsible splitting the data of each cell on kariokinesis events, where after the data per
+    Function responsible splitting the data of each cell on karyokinesis events, where after the data per
     cycle is interpolated to 100 datapoints.
-
     :param final_volume_data:
-    :param individual_cells:
     :param kario_events:
     :return:
     """
+    individual_cells = sorted(list(set(final_volume_data["Cell_pos"])))
     min_datapoints_for_interpolation = 10
     desired_datapoints = 100
     cols = ["cell", "cycle", "start", "end"]
@@ -436,7 +455,8 @@ def generate_interpolated_cycle_plots(cell_volumes_interpolated, nuc_volumes_int
         count = 0
         data_type = interpolated_dataframe[0]
         while count < len(interpolated_dataframe[1]):
-            print(f"Generating interpolated cycle plots, {round(progress / total_runs * 100)}% done..", end="\r", flush=True)
+            print(f"Generating interpolated cycle plots, {round(progress / total_runs * 100)}% done..", end="\r",
+                  flush=True)
             single_cycle_data = interpolated_dataframe[1].iloc[count]
             plt.plot(single_cycle_data[5:].values, 'r', linewidth=3)
             cell_name = single_cycle_data['cell']
@@ -444,9 +464,42 @@ def generate_interpolated_cycle_plots(cell_volumes_interpolated, nuc_volumes_int
             plt.title(f"{cell_name}, cycle {cycle_id}, {data_type} (interpolated)", fontstyle='italic', y=1.02)
             plt.xlabel("Time")
             plt.ylabel(interpolated_dataframe[2])
-            save_figure(f"{output_dir}plots/separate_cell_plots/interpolated_cycles/{data_type}/{cell_name}_cycle{cycle_id}.png")
+            save_figure(
+                f"{output_dir}plots/separate_cell_plots/interpolated_cycles/{data_type}/{cell_name}_cycle{cycle_id}.png"
+            )
             count += 1
             progress += 1
+
+
+def generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated):
+    """
+    This function generates one of the final products of this script, namely a plot which shows the nuclear
+    and whole-cell volumes over time. This data is interpolated to 100 datapoints per cycle, where after an average
+    was taken of all cycles.
+    :param cell_volumes_interpolated:
+    :param nuc_volumes_interpolated:
+    :return:
+    """
+    # take the mean of the dataframes again
+    cell_volumes_interpolated = cell_volumes_interpolated.mean(axis=0, numeric_only=True)
+    nuc_volumes_interpolated = nuc_volumes_interpolated.mean(axis=0, numeric_only=True)
+
+    # also generate one with nuc and cell volume together
+    fig, ax1 = plt.subplots()
+    fig.suptitle("Whole-cell and nuclear volumes over time (interpolated & averaged)")
+    ax1.set_xlabel('Time')
+    ax1.grid(False)
+    ax1.set_ylabel("Cell volume (µm\u00b3)", color='tab:red')
+    ax1.plot(cell_volumes_interpolated[4:].values, color='tab:red')
+    ax1.tick_params(axis='y', labelcolor='tab:red')
+
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    ax2.grid(False)
+    ax2.set_ylabel("Nucleus volume (µm\u00b3)", color='tab:blue')
+    ax2.plot(nuc_volumes_interpolated[4:].values, color='tab:blue')
+    ax2.tick_params(axis='y', labelcolor='tab:blue')
+
+    save_figure(f"{output_dir}plots/interpolated_averaged/Volumes_together.png")
 
 
 def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated):
@@ -476,36 +529,6 @@ def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated,
     generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated)
 
 
-def generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated):
-    """
-
-    :param cell_volumes_interpolated:
-    :param nuc_volumes_interpolated:
-    :return:
-    """
-    # take the mean of the dataframes again
-    cell_volumes_interpolated = cell_volumes_interpolated.mean(axis=0, numeric_only=True)
-    nuc_volumes_interpolated = nuc_volumes_interpolated.mean(axis=0, numeric_only=True)
-
-    # also generate one with nuc and cell volume together
-    fig, ax1 = plt.subplots()
-    fig.suptitle("Whole-cell and nuclear volumes over time (interpolated & averaged)")
-
-    ax1.set_xlabel('Time')
-    ax1.grid(False)
-    ax1.set_ylabel("Cell volume (µm\u00b3)", color='tab:red')
-    ax1.plot(cell_volumes_interpolated[4:].values, color='tab:red')
-    ax1.tick_params(axis='y', labelcolor='tab:red')
-
-    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-    ax2.grid(False)
-    ax2.set_ylabel("Nucleus volume (µm\u00b3)", color='tab:blue')
-    ax2.plot(nuc_volumes_interpolated[4:].values, color='tab:blue')
-    ax2.tick_params(axis='y', labelcolor='tab:blue')
-
-    save_figure(f"{output_dir}plots/interpolated_averaged/Volumes_together.png")
-
-
 def main(argv):
     tic = time.perf_counter()  # start counter
 
@@ -521,8 +544,7 @@ def main(argv):
 
     # start of logic
     budj_data = load_all_budj_data()  # load the budj data from all the separate files
-    budding_events, kario_events = load_events()  # load the kyrokinesis and budding events
-    individual_cells = sorted(list(set(budj_data["Cell_pos"])))  # how many cells are there in total
+    budding_events, kario_events = load_events()  # load the karyokinesis and budding events
 
     # if volume dataset already exists, prevent generating this again and load it
     final_dataframe_path = f"{output_dir}excel/nup133_volume_data.xlsx"
@@ -530,11 +552,10 @@ def main(argv):
         print("Volume data has been generated already. The output file exists.")
         final_volume_data = pd.read_excel(final_dataframe_path)
     else:
-        print("Generating volume data..")
-        final_volume_data = get_volume_data(budj_data, individual_cells)
-    
+        final_volume_data = get_volume_data(budj_data)
+
     # generate a combined volumes plot for all cells separate
-    if do_plot: generate_separate_volume_plots(individual_cells, final_volume_data)
+    if do_plot: generate_separate_volume_plots(final_volume_data)
 
     # check if cycles have been split and interpolated, if not, do this
     count = 0
@@ -549,13 +570,14 @@ def main(argv):
         nc_ratios_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
     else:
         print("Performing interpolation on cell volume, nuc volume and n/c ratio data..")
-        interpolated_dataframes = split_cycles_and_interpolate(final_volume_data, individual_cells, kario_events)
+        interpolated_dataframes = split_cycles_and_interpolate(final_volume_data, kario_events)
         cell_volumes_interpolated = interpolated_dataframes[0]
         nuc_volumes_interpolated = interpolated_dataframes[1]
         nc_ratios_interpolated = interpolated_dataframes[2]
 
     # generate a plot per interpolated cycle
-    if do_plot: generate_interpolated_cycle_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated)
+    if do_plot: generate_interpolated_cycle_plots(cell_volumes_interpolated, nuc_volumes_interpolated,
+                                                  nc_ratios_interpolated)
 
     # average the interpolated data and plot the result (cell volume, nucleus volume and N/C ratio)
     if do_plot: generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated)
