@@ -224,7 +224,7 @@ def remove_outliers(individual_cells, vol_data):
     :param vol_data:
     :return:
     """
-    print("Removing outliers from the volume data based on the Inter Quartile Range approach..")
+    print("Removing outliers from the volume data based on the Inter Quartile Range approach..", end="\r", flush=True)
     data_wo_outliers = pd.DataFrame({})
     for cell in individual_cells:
         cell_data = vol_data[vol_data["Cell_pos"] == cell]
@@ -243,7 +243,7 @@ def remove_outliers(individual_cells, vol_data):
             ~((cell_data.Nucleus_volume < (Q1 - 1.5 * IQR)) | (cell_data.Nucleus_volume > (Q3 + 1.5 * IQR)))]
 
         data_wo_outliers = pd.concat([data_wo_outliers, cell_data])
-
+    print("Removing outliers from the volume data based on the Inter Quartile Range approach.. Done!")
     return data_wo_outliers
 
 
@@ -263,15 +263,15 @@ def add_daughter_volumes(single_cell_data, daughters_data):
     pass
 
 
-def get_volume_data(budj_data):
+def get_volume_data():
     """
     The most complex, and by far most compute intensive, function of this script. It goes through all tiff movies and
-    all cells, and for each cell it loops over all frame in the movie. For every frame, local thresholding is performed,
-    and an ellipse is fitted. Using this ellipse, the volume is calculated. It all is stored within one dataframe.
-
-    :param budj_data:
+    all cells, and for each cell it loops over all frames in the movie. For every frame, local thresholding is
+    performed and an ellipse is fitted. Using this ellipse, the volume is calculated. All the information is stored
+    within a single dataframe.
     :return:
     """
+    budj_data = load_all_budj_data()  # load the budj data from all the separate files
     tiff_images = read_images()  # load all images at once, we need them all anyway
     print("Generating volume data..", end="\r", flush=True)
     final_volume_data = pd.DataFrame({})  # create an empty dataframe to eventually store all data in
@@ -356,7 +356,7 @@ def get_volume_data(budj_data):
 
     final_volume_data = remove_outliers(individual_cells, final_volume_data)  # remove outliers
     final_volume_data = final_volume_data.reset_index(drop=True)  # reset index of dataframe
-    final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data_test_daughters.xlsx")  # save the final file
+    final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data.xlsx")  # save the final file
     print("Generating volume data.. Done!")
     return final_volume_data
 
@@ -395,6 +395,7 @@ def split_cycles_and_interpolate(final_volume_data, kario_events):
     :param kario_events:
     :return:
     """
+    print("Performing interpolation on cell volume, nuc volume and n/c ratio data..", end="\r", flush=True)
     individual_cells = sorted(list(set(final_volume_data["Cell_pos"])))
     min_datapoints_for_interpolation = 10
     desired_datapoints = 100
@@ -402,8 +403,8 @@ def split_cycles_and_interpolate(final_volume_data, kario_events):
     cols += range(desired_datapoints)
 
     interpolated_dataframes = []
+    tot_under = 0
     for data_type in ["Cell_volume", "Nucleus_volume", "N/C_ratio"]:  # interpolate the columns in this list
-        tot_under = 0
         data_interpolated = pd.DataFrame(columns=cols)
 
         for cell in individual_cells[1:]:  # remove cell pos01_1, since it has too many missing frames
@@ -412,8 +413,8 @@ def split_cycles_and_interpolate(final_volume_data, kario_events):
 
             count = 0
             while count < len(kario_events[cell]) - 1:
-                tp1 = kario_events[cell][count]
-                tp2 = kario_events[cell][count + 1] + 1  # extend by a frame to see real impact of karyokinesis
+                tp1 = kario_events[cell][count] + 1
+                tp2 = kario_events[cell][count + 1] + 2  # extend by a frame to see real impact of karyokinesis
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
                 # when there are not enough datapoints (because of outlier removal) for this cycle, ignore it
@@ -438,8 +439,10 @@ def split_cycles_and_interpolate(final_volume_data, kario_events):
         if data_type == "N/C_ratio": data_type = "NC_ratio"  # cannot save file
         data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_{data_type}s.xlsx")
         interpolated_dataframes.append(data_interpolated)
-        print(f"For the datatype {data_type}, there were {tot_under} cycles removed from the final dataframe since "
-              f"they had less than {min_datapoints_for_interpolation} datapoints")
+
+    print("Performing interpolation on cell volume, nuc volume and n/c ratio data.. Done!")
+    print(f"There were {tot_under} cycles removed among the three dataframes because they had less than "
+          f"{min_datapoints_for_interpolation} datapoints.")
     return interpolated_dataframes
 
 
@@ -508,7 +511,7 @@ def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated,
     saved to the user's system.
     :return:
     """
-    print("Generating the averaged interpolated data plots..")
+    print("Generating the averaged interpolated data plots..", end="\r", flush=True)
     data_list = [  # average the interpolated cycles
         ("Cell volume", cell_volumes_interpolated.mean(axis=0, numeric_only=True), "µm\u00b3"),
         ("Nuclear volume", nuc_volumes_interpolated.mean(axis=0, numeric_only=True), "µm\u00b3"),
@@ -527,9 +530,11 @@ def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated,
         save_figure(f"{output_dir}plots/interpolated_averaged/{filename}.png")
 
     generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated)
+    print("Generating the averaged interpolated data plots.. Done!")
 
 
 def main(argv):
+    print("Getting started!")
     tic = time.perf_counter()  # start counter
 
     # argument handling
@@ -543,7 +548,6 @@ def main(argv):
             sys.exit(2)
 
     # start of logic
-    budj_data = load_all_budj_data()  # load the budj data from all the separate files
     budding_events, kario_events = load_events()  # load the karyokinesis and budding events
 
     # if volume dataset already exists, prevent generating this again and load it
@@ -552,7 +556,7 @@ def main(argv):
         print("Volume data has been generated already. The output file exists.")
         final_volume_data = pd.read_excel(final_dataframe_path)
     else:
-        final_volume_data = get_volume_data(budj_data)
+        final_volume_data = get_volume_data()
 
     # generate a combined volumes plot for all cells separate
     if do_plot: generate_separate_volume_plots(final_volume_data)
@@ -569,7 +573,6 @@ def main(argv):
         nuc_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_volumes.xlsx")
         nc_ratios_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
     else:
-        print("Performing interpolation on cell volume, nuc volume and n/c ratio data..")
         interpolated_dataframes = split_cycles_and_interpolate(final_volume_data, kario_events)
         cell_volumes_interpolated = interpolated_dataframes[0]
         nuc_volumes_interpolated = interpolated_dataframes[1]
