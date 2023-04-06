@@ -17,7 +17,7 @@ plt.style.use('seaborn-v0_8')
 #######################
 ### IMPORTANT PATHS ###
 #######################
-data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data"
+data_dir = "/Users/olledejong/Studie/MSc Biology/Research Project V1/Code and data/Data"
 tiff_files_dir = data_dir + "/processed_tiffs_nup133/"  # relative path from data directory to tiff directory
 output_dir = data_dir + "/Output/"  # relative path from data directory to image output directory
 budj_data_folder = data_dir + "/Input/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
@@ -68,14 +68,14 @@ def ellipse_from_budj(t, cell_data):
     return x_pos, y_pos, majorR, minorR, angle
 
 
-def get_ellipse(imageGFP, nuc_mask):
+def get_ellipse(image_gfp, nuc_mask):
     """
     Function that generates and fits the ellipse using the opencv package.
-    :param imageGFP: the GFP image data
+    :param image_gfp: the GFP image data
     :param nuc_mask: nuclear mask determined by budj data
     :return:
     """
-    mask = imageGFP * nuc_mask
+    mask = image_gfp * nuc_mask
     thresh = mask.astype(np.uint8)  # change type to uint8
 
     contours, hierarchy = cv2.findContours(thresh, 1, 2)
@@ -229,18 +229,11 @@ def remove_outliers(individual_cells, vol_data):
     for cell in individual_cells:
         cell_data = vol_data[vol_data["Cell_pos"] == cell]
         # for whole-cell volume
-        Q1 = cell_data.Cell_volume.quantile(0.25)
-        Q3 = cell_data.Cell_volume.quantile(0.75)
-        IQR = Q3 - Q1
-        cell_data = cell_data[
-            ~((cell_data.Cell_volume < (Q1 - 1.5 * IQR)) | (cell_data.Cell_volume > (Q3 + 1.5 * IQR)))]
-
-        # now for nuclear volume
-        Q1 = cell_data.Nucleus_volume.quantile(0.25)
-        Q3 = cell_data.Nucleus_volume.quantile(0.75)
-        IQR = Q3 - Q1
-        cell_data = cell_data[
-            ~((cell_data.Nucleus_volume < (Q1 - 1.5 * IQR)) | (cell_data.Nucleus_volume > (Q3 + 1.5 * IQR)))]
+        for data_column in [cell_data.Cell_volume, cell_data.Nucleus_volume]:
+            Q1 = data_column.quantile(0.25)
+            Q3 = data_column.quantile(0.75)
+            IQR = Q3 - Q1
+            cell_data = cell_data[~((data_column < (Q1 - 1.5 * IQR)) | (data_column > (Q3 + 1.5 * IQR)))]
 
         data_wo_outliers = pd.concat([data_wo_outliers, cell_data])
     print("Removing outliers from the volume data based on the Inter Quartile Range approach.. Done!")
@@ -259,11 +252,80 @@ def read_images():
     return images
 
 
-def add_daughter_volumes(single_cell_data, daughters_data):
+def extrapolate_daughter_buds():
+    """
+    This function takes the original budj dataframe and extrapolates the daughter data backwards until the volume
+    hits zero. This is done through linear extrapolation on the first few datapoints of the daughter volume.
+    :return:
+    """
+
     pass
 
 
-def get_volume_data():
+def get_data_for_all_timeframes(image_gfp, single_cell_data, daughters_data):
+    """
+    This function, for the given cell, calculates the nuclear and cell areas and nuclear and cell volumes at all
+    time-frames. The whole-cell area and volume are incremented with daughter's area and volume when one exists.
+    :param daughters_data:
+    :param image_gfp:
+    :param single_cell_data:
+    :return:
+    """
+    cell_areas, nuc_areas, cell_volumes, nuc_volumes = [], [], [], []
+    for t in single_cell_data.TimeID:
+        t_in_tiff = t - 1  # skew the time by one for tiff dataframe
+        imageGFP_at_frame = image_gfp[t_in_tiff, :, :]  # get the GFP data
+
+        # WHOLE CELL #
+
+        # get whole-cell area and volume
+        whole_cell_mask, x_pos, y_pos = get_whole_cell_mask(t, single_cell_data, imageGFP_at_frame.shape)
+        (c_x, c_y), (c_MA, c_ma), c_angle = get_ellipse(imageGFP_at_frame, whole_cell_mask)
+        cell_area, cell_volume = get_area_and_vol(c_ma, c_MA)
+
+        # check if there is a daughter at this frame; if so, add the area/volume of the daughter to the mother
+        if t in daughters_data.TimeID.values:
+            # get the daughter whole_cell_mask
+            whole_cell_mask_daughter, x_pos, y_pos = get_whole_cell_mask(t, daughters_data, imageGFP_at_frame.shape)
+            # fit the daughter cell ellipse
+            (d_x, d_y), (d_MA, d_ma), d_angle = get_ellipse(imageGFP_at_frame, whole_cell_mask_daughter)
+            # get daughter cell area and volume and add it to the mother's data
+            daughter_area, daughter_volume = get_area_and_vol(d_ma, d_MA)
+            cell_area += daughter_area
+            cell_volume += daughter_volume
+
+        cell_areas.append(cell_area)
+        cell_volumes.append(cell_volume)
+
+        # NUCLEUS #
+
+        imageGFP_cell_mask = imageGFP_at_frame * whole_cell_mask  # keep only data within the whole cell mask
+        num_cell_pixels = np.count_nonzero(whole_cell_mask == True)  # count number of pixels in that mask
+        bloc_size_cell_size_dependent = round_up_to_odd(bloc_size_frac_to_use * num_cell_pixels)
+        nucl_thresh_mask_local = threshold_local(
+            image=imageGFP_cell_mask,
+            block_size=bloc_size_cell_size_dependent,
+            offset=offset_to_use
+        )
+        imageGFP_nuc_mask_local = remove_small_objects(imageGFP_cell_mask > nucl_thresh_mask_local)
+
+        # try to fit the ellipse on the nucleus, if the nucleus is out of focus, then add None to the list
+        try:
+            (x, y), (MA, ma), angle = get_ellipse(imageGFP_at_frame, imageGFP_nuc_mask_local)
+        except Exception:
+            # thresholding did not lead to an ellipse, nucleus was probably out of focus
+            nuc_volumes.append(None)
+            nuc_areas.append(None)
+            continue
+
+        # save nucleus area and volume to dataframe
+        nuc_area, nuc_volume = get_area_and_vol(ma, MA)
+        nuc_areas.append(nuc_area)
+        nuc_volumes.append(nuc_volume)
+    return cell_areas, cell_volumes, nuc_areas, nuc_volumes
+
+
+def get_data_for_all_cells():
     """
     The most complex, and by far most compute intensive, function of this script. It goes through all tiff movies and
     all cells, and for each cell it loops over all frames in the movie. For every frame, local thresholding is
@@ -271,92 +333,50 @@ def get_volume_data():
     within a single dataframe.
     :return:
     """
-    budj_data = load_all_budj_data()  # load the budj data from all the separate files
-    tiff_images = read_images()  # load all images at once, we need them all anyway
+    budj_data = load_all_budj_data()
+    # budj_data = extrapolate_daughter_buds(budj_data)
+    tiff_images = read_images()
+
     print("Generating volume data..", end="\r", flush=True)
-    final_volume_data = pd.DataFrame({})  # create an empty dataframe to eventually store all data in
     individual_cells = sorted([x for x in budj_data["Cell_pos"].unique() if 'd' not in x])
 
-    nth_cell = 0  # let's keep track of how many cells we've handled
-    for cell in individual_cells:
-        image = tiff_images[cell[3:5]]  # get the image in which this specific cell is located
-        imageGFP = image[:, 1, :, :]  # get the GFP data only
+                    # GET CELL DATA (AREA & VOLUME AND NUCLEAR AREA & VOLUME) FOR EVERY CELL
 
+    nth_cell = 0
+    final_volume_data = pd.DataFrame({})
+    for cell in individual_cells:
         print(f"Working, now at {round(nth_cell / len(individual_cells) * 100)}%..", end="\r", flush=True)
-        single_cell_data = budj_data[budj_data["Cell_pos"] == cell].sort_values(by="TimeID")
+
+        # get right image from images dictionary and select the right channel (GFP)
+        image = tiff_images[cell[3:5]]
+        image_gfp = image[:, 1, :, :]
+
+        # separate the data in mother and daughter
+        cell_data = budj_data[budj_data["Cell_pos"] == cell].sort_values(by="TimeID")
         daughters_data = budj_data[budj_data["Cell_pos"].str.contains(f"{cell}_d")].sort_values(by="TimeID")
 
-        cell_areas, nuc_areas, cell_volumes, nuc_volumes = [], [], [], []
-        for t in single_cell_data.TimeID:
-            t_in_tiff = t - 1  # skew the time by one for tiff dataframe
-            imageGFP_at_frame = imageGFP[t_in_tiff, :, :]  # get the GFP data
-            
-            # WHOLE CELL #
+        cell_areas, cell_vols, nuc_areas, nuc_vols = get_data_for_all_timeframes(image_gfp, cell_data, daughters_data)
 
-            # get whole-cell area and volume
-            whole_cell_mask, x_pos, y_pos = get_whole_cell_mask(t, single_cell_data, imageGFP_at_frame.shape)
-            (c_x, c_y), (c_MA, c_ma), c_angle = get_ellipse(imageGFP_at_frame, whole_cell_mask)
-            cell_area, cell_volume = get_area_and_vol(c_ma, c_MA)
-
-            # check if there is a daughter at this frame; if so, add the area/volume of the daughter to the mother
-            if t in daughters_data.TimeID.values:
-                # get the daughter whole_cell_mask
-                whole_cell_mask_daughter, x_pos, y_pos = get_whole_cell_mask(t, daughters_data, imageGFP_at_frame.shape)
-                # fit the daughter cell ellipse
-                (d_x, d_y), (d_MA, d_ma), d_angle = get_ellipse(imageGFP_at_frame, whole_cell_mask_daughter)
-                # get daughter cell area and volume and add it to the mother's data
-                daughter_area, daughter_volume = get_area_and_vol(d_ma, d_MA)
-                cell_area += daughter_area
-                cell_volume += daughter_volume
-
-            cell_areas.append(cell_area)
-            cell_volumes.append(cell_volume)
-            
-            # NUCLEUS #
-
-            imageGFP_cell_mask = imageGFP_at_frame * whole_cell_mask  # keep only data within the whole cell mask
-            num_cell_pixels = np.count_nonzero(whole_cell_mask == True)  # count number of pixels in that mask
-            bloc_size_cell_size_dependent = round_up_to_odd(bloc_size_frac_to_use * num_cell_pixels)
-            nucl_thresh_mask_local = threshold_local(
-                image=imageGFP_cell_mask,
-                block_size=bloc_size_cell_size_dependent,
-                offset=offset_to_use
-            )
-            imageGFP_nuc_mask_local = remove_small_objects(imageGFP_cell_mask > nucl_thresh_mask_local)
-
-            # try to fit the ellipse on the nucleus, if the nucleus is out of focus, then add None to the list
-            try:
-                (x, y), (MA, ma), angle = get_ellipse(imageGFP_at_frame, imageGFP_nuc_mask_local)
-            except Exception:
-                # thresholding did not lead to an ellipse, nucleus was probably out of focus
-                nuc_volumes.append(None)
-                nuc_areas.append(None)
-                continue
-
-            # save nucleus area and volume to dataframe
-            nuc_area, nuc_volume = get_area_and_vol(ma, MA)
-            nuc_areas.append(nuc_area)
-            nuc_volumes.append(nuc_volume)
-
-        # calculate the ratios
+        # get the ratios
         ratios = []
-        for i in range(0, len(nuc_volumes)):
-            ratios.append(None) if nuc_volumes[i] is None else ratios.append(nuc_volumes[i] / cell_volumes[i])
+        for i in range(0, len(nuc_vols)):
+            ratios.append(None) if nuc_vols[i] is None else ratios.append(nuc_vols[i] / cell_vols[i])
 
         # store data in this cell its dataframe
-        single_cell_data["Cell_area"] = pd.Series(cell_areas, index=single_cell_data.index, dtype="float64")
-        single_cell_data["Cell_volume"] = pd.Series(cell_volumes, index=single_cell_data.index, dtype="float64")
-        single_cell_data["Nucleus_area"] = pd.Series(nuc_areas, index=single_cell_data.index, dtype="float64")
-        single_cell_data["Nucleus_volume"] = pd.Series(nuc_volumes, index=single_cell_data.index, dtype="float64")
-        single_cell_data["N/C_ratio"] = pd.Series(ratios, index=single_cell_data.index, dtype="float64")
+        cell_data["Cell_area"] = pd.Series(cell_areas, index=cell_data.index, dtype="float64")
+        cell_data["Cell_volume"] = pd.Series(cell_vols, index=cell_data.index, dtype="float64")
+        cell_data["Nucleus_area"] = pd.Series(nuc_areas, index=cell_data.index, dtype="float64")
+        cell_data["Nucleus_volume"] = pd.Series(nuc_vols, index=cell_data.index, dtype="float64")
+        cell_data["N/C_ratio"] = pd.Series(ratios, index=cell_data.index, dtype="float64")
 
         # store this cell's data in the final dataframe which eventually contains data of all cells
-        final_volume_data = pd.concat([final_volume_data, single_cell_data])
+        final_volume_data = pd.concat([final_volume_data, cell_data])
         nth_cell += 1
 
-    final_volume_data = remove_outliers(individual_cells, final_volume_data)  # remove outliers
-    final_volume_data = final_volume_data.reset_index(drop=True)  # reset index of dataframe
-    final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data.xlsx")  # save the final file
+    # remove outliers, reset the index and save the final dataframe
+    final_volume_data = remove_outliers(individual_cells, final_volume_data)
+    final_volume_data = final_volume_data.reset_index(drop=True)
+    final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data.xlsx")
     print("Generating volume data.. Done!")
     return final_volume_data
 
@@ -429,7 +449,6 @@ def split_cycles_and_interpolate(final_volume_data, kario_events):
 
                 # interpolate the data towards 100 datapoints
                 x_new = np.linspace(0, len(cell_cycle_dat), desired_datapoints)
-                f1 = interpolate.interp1d(x, y, kind='linear')
                 f2 = interpolate.interp1d(x, y, kind='cubic')
 
                 # add the interpolated data to a dataframe
@@ -447,6 +466,13 @@ def split_cycles_and_interpolate(final_volume_data, kario_events):
 
 
 def generate_interpolated_cycle_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated):
+    """
+    This function takes the data of the three main datatypes of interest and creates a plot of each one for every cycle.
+    :param cell_volumes_interpolated:
+    :param nuc_volumes_interpolated:
+    :param nc_ratios_interpolated:
+    :return:
+    """
     interpolated_dataframes = [
         ("Cell volume", cell_volumes_interpolated, "Cell volume (µm\u00b3)"),
         ("Nucleus volume", nuc_volumes_interpolated, "Nucleus volume (µm\u00b3)"),
@@ -556,7 +582,7 @@ def main(argv):
         print("Volume data has been generated already. The output file exists.")
         final_volume_data = pd.read_excel(final_dataframe_path)
     else:
-        final_volume_data = get_volume_data()
+        final_volume_data = get_data_for_all_cells()
 
     # generate a combined volumes plot for all cells separate
     if do_plot: generate_separate_volume_plots(final_volume_data)
