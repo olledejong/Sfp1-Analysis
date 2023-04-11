@@ -2,11 +2,12 @@ import os
 import sys
 import time
 import re
-from math import pi, sin, cos
+import cv2
 import pandas as pd
 import numpy as np
-import cv2
 import matplotlib.pyplot as plt
+from math import pi, sin, cos
+from sklearn.linear_model import LinearRegression
 from scipy import interpolate
 from skimage.io import imread
 from skimage.filters import threshold_local, threshold_minimum, threshold_multiotsu
@@ -252,14 +253,53 @@ def read_images():
     return images
 
 
-def extrapolate_daughter_buds():
+def extrapolate_daughter_data(image_gfp, daughters_data):
     """
-    This function takes the original budj dataframe and extrapolates the daughter data backwards until the volume
-    hits zero. This is done through linear extrapolation on the first few datapoints of the daughter volume.
-    :return:
+    This function takes the original budj daughter dataframe and extrapolates the daughter data backwards until the
+    volume hits zero. This is done through linear extrapolation on the first few datapoints of the daughter volume.
+    :return: altered daughters_data
     """
 
-    pass
+    # first we need to get the daughters area and volume on the time-points that are defined.
+    daughters_area_vol_data = {}
+    individual_daughters = sorted([x for x in daughters_data["Cell_pos"].unique()])
+    for cell in individual_daughters:
+        daughter_data = daughters_data[daughters_data["Cell_pos"] == cell]
+        daughter_area_vol_data = []
+        for t in daughter_data.TimeID:
+            t_in_tiff = t - 1
+            imageGFP_at_frame = image_gfp[t_in_tiff, :, :]
+            whole_cell_mask_daughter, x_pos, y_pos = get_whole_cell_mask(t, daughters_data, imageGFP_at_frame.shape)
+            (d_x, d_y), (d_MA, d_ma), d_angle = get_ellipse(imageGFP_at_frame, whole_cell_mask_daughter)
+            daughter_area, daughter_volume = get_area_and_vol(d_ma, d_MA)
+            daughter_area_vol_data.append((t, daughter_area, daughter_volume))
+
+        # now we need to fit a linear regression line and extrapolate until the volume hits zero
+        ts_o = [time_point[0] for time_point in daughter_area_vol_data]
+        areas_o = [time_point[1] for time_point in daughter_area_vol_data]
+        vols_o = [time_point[2] for time_point in daughter_area_vol_data]
+
+        ts = np.array(ts_o[:4]).reshape(-1, 1)
+        ts_x = np.arange(ts[0] - 1, ts[-1]).reshape(-1, 1)
+
+        vols = np.array(vols_o[:4]).reshape(-1, 1)
+        model = LinearRegression()  # create object for the class
+        model.fit(ts, vols)  # perform linear regression
+        first_list = [model.predict(ts_x)[0][0]]
+        final_vols = first_list + vols_o  # make a prediction for the preceding time-frame
+
+        areas = np.array(areas_o[:4]).reshape(-1, 1)
+        model = LinearRegression()  # create object for the class
+        model.fit(ts, areas)  # perform linear regression
+        first_list = [model.predict(ts_x)[0][0]]
+        final_areas = first_list + areas_o  # make a prediction for the preceding time-frame
+
+        i = 0
+        for t in [ts_o[0] - 1] + ts_o:
+            daughters_area_vol_data[t] = (final_areas[i], final_vols[i])
+            i += 1
+
+    return daughters_area_vol_data
 
 
 def get_data_for_all_timeframes(image_gfp, single_cell_data, daughters_data):
@@ -284,15 +324,9 @@ def get_data_for_all_timeframes(image_gfp, single_cell_data, daughters_data):
         cell_area, cell_volume = get_area_and_vol(c_ma, c_MA)
 
         # check if there is a daughter at this frame; if so, add the area/volume of the daughter to the mother
-        if t in daughters_data.TimeID.values:
-            # get the daughter whole_cell_mask
-            whole_cell_mask_daughter, x_pos, y_pos = get_whole_cell_mask(t, daughters_data, imageGFP_at_frame.shape)
-            # fit the daughter cell ellipse
-            (d_x, d_y), (d_MA, d_ma), d_angle = get_ellipse(imageGFP_at_frame, whole_cell_mask_daughter)
-            # get daughter cell area and volume and add it to the mother's data
-            daughter_area, daughter_volume = get_area_and_vol(d_ma, d_MA)
-            cell_area += daughter_area
-            cell_volume += daughter_volume
+        if t in daughters_data.keys():
+            cell_area += daughters_data[t][0]
+            cell_volume += daughters_data[t][1]
 
         cell_areas.append(cell_area)
         cell_volumes.append(cell_volume)
@@ -336,16 +370,14 @@ def get_data_for_all_cells():
     budj_data = load_all_budj_data()
     # budj_data = extrapolate_daughter_buds(budj_data)
     tiff_images = read_images()
-
-    print("Generating volume data..", end="\r", flush=True)
     individual_cells = sorted([x for x in budj_data["Cell_pos"].unique() if 'd' not in x])
 
                     # GET CELL DATA (AREA & VOLUME AND NUCLEAR AREA & VOLUME) FOR EVERY CELL
 
     nth_cell = 0
     final_volume_data = pd.DataFrame({})
-    for cell in individual_cells:
-        print(f"Working, now at {round(nth_cell / len(individual_cells) * 100)}%..", end="\r", flush=True)
+    for cell in individual_cells[:3]:
+        print(f"Generating volume data ({round(nth_cell / len(individual_cells) * 100)}% Done)", end="\r", flush=True)
 
         # get right image from images dictionary and select the right channel (GFP)
         image = tiff_images[cell[3:5]]
@@ -355,6 +387,8 @@ def get_data_for_all_cells():
         cell_data = budj_data[budj_data["Cell_pos"] == cell].sort_values(by="TimeID")
         daughters_data = budj_data[budj_data["Cell_pos"].str.contains(f"{cell}_d")].sort_values(by="TimeID")
 
+        # extrapolate daughter cell data in such a way that the first timeframe has a volume of 0
+        daughters_data = extrapolate_daughter_data(image_gfp, daughters_data)
         cell_areas, cell_vols, nuc_areas, nuc_vols = get_data_for_all_timeframes(image_gfp, cell_data, daughters_data)
 
         # get the ratios
@@ -378,6 +412,7 @@ def get_data_for_all_cells():
     final_volume_data = final_volume_data.reset_index(drop=True)
     final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data.xlsx")
     print("Generating volume data.. Done!")
+    sys.exit(0)
     return final_volume_data
 
 
