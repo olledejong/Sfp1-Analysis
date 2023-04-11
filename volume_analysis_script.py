@@ -10,15 +10,15 @@ from math import pi, sin, cos
 from sklearn.linear_model import LinearRegression
 from scipy import interpolate
 from skimage.io import imread
-from skimage.filters import threshold_local, threshold_minimum, threshold_multiotsu
-from skimage.morphology import remove_small_objects, disk, erosion
+from skimage.filters import threshold_local
+from skimage.morphology import remove_small_objects
 
 plt.style.use('seaborn-v0_8')
 
 #######################
 ### IMPORTANT PATHS ###
 #######################
-data_dir = "/Users/olledejong/Studie/MSc Biology/Research Project V1/Code and data/Data"
+data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data"
 tiff_files_dir = data_dir + "/processed_tiffs_nup133/"  # relative path from data directory to tiff directory
 output_dir = data_dir + "/Output/"  # relative path from data directory to image output directory
 budj_data_folder = data_dir + "/Input/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
@@ -112,6 +112,7 @@ def load_all_budj_data():
     """
     print("Loading all BudJ excel files..", end="\r", flush=True)
     files = load_budj_files()  # get the separate files
+
     # add the data of all files to one single dataframe
     budj_data = pd.DataFrame({})
     for filename, cell_name in files:
@@ -121,12 +122,12 @@ def load_all_budj_data():
         temp_data = pd.DataFrame(columns=pos_data.columns)
         # name the cells correctly, the mother's name is unchanged, but the daughters are now recognizable
         for index, row in pos_data.iterrows():
+            # when cell is not cell 1, then it is a daughter cell
             row["Cell_pos"] = cell_name if row["Cell"] == 1 else f"{cell_name}_d{round(row['Cell'] - 1)}"
             temp_data.loc[len(temp_data) + 1] = row.values
 
         # keep only the following columns
-        temp_data = temp_data.loc[:,
-                    ["TimeID", "Time (min)", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
+        temp_data = temp_data.loc[:, ["TimeID", "Time (min)", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
 
         # save the mother + daughter data to the bigger dataframe holding data for all mothers + daughters
         budj_data = pd.concat([budj_data, temp_data])
@@ -143,31 +144,24 @@ def load_events():
     data and stores it in a dictionary object.
     :return:
     """
-    events_files = {"budding": budding_data_path, "kariokinesis": kario_data_path}
-
-    budding_events = {}
     kario_events = {}
-    for event_type in events_files:  # for either budding or kariokinesis events
-        opened_file = open(events_files[event_type])  # open the file
-        events = {}  # temp storage object
-        for line in opened_file:  # every line in the file is a cell
-            if line == "\n":
-                continue
-            # process the two parts of the line by removing characters
-            parts = line.split(':')
-            cell_id = parts[0].replace("\"", "").strip()  # first part of the line is the individual cell
-            timepoints = re.sub('[\[\]]', "", parts[1])  # second part are the timepoints
-            # split timepoints on space to capture them in a list
-            split_timepoints = timepoints.split(",")
-            events[cell_id] = [int(x.strip()) for x in split_timepoints[:-1]]  # remove redundant last comma
+    opened_file = open(kario_data_path)
+    events = {}
 
-        # save the events to the right dictionary
-        if event_type == "budding":
-            budding_events = events
-        if event_type == "kariokinesis":
-            kario_events = events
-        opened_file.close()
-    return budding_events, kario_events
+    for line in opened_file:  # every line in the file is a cell
+        if line == "\n":
+            continue
+        # process the two parts of the line by removing characters
+        parts = line.split(':')
+        cell_id = parts[0].replace("\"", "").strip()
+        timepoints = re.sub('[\[\]]', "", parts[1])
+
+        # split timepoints on space to capture them in a list
+        split_timepoints = timepoints.split(",")
+        kario_events[cell_id] = [int(x.strip()) for x in split_timepoints[:-1]]
+
+    opened_file.close()
+    return kario_events
 
 
 def get_area_and_vol(minor_r, major_r):
@@ -275,27 +269,42 @@ def extrapolate_daughter_data(image_gfp, daughters_data):
             daughter_area_vol_data.append((t, daughter_area, daughter_volume))
 
         # now we need to fit a linear regression line and extrapolate until the volume hits zero
-        ts_o = [time_point[0] for time_point in daughter_area_vol_data]
+        time_o = [time_point[0] for time_point in daughter_area_vol_data]
         areas_o = [time_point[1] for time_point in daughter_area_vol_data]
         vols_o = [time_point[2] for time_point in daughter_area_vol_data]
 
-        ts = np.array(ts_o[:4]).reshape(-1, 1)
-        ts_x = np.arange(ts[0] - 1, ts[-1]).reshape(-1, 1)
+        # perform extrapolation only on first 4 datapoints
+        time_new = np.array(time_o[:4]).reshape(-1, 1)
+        vols_new = np.array(vols_o[:4]).reshape(-1, 1)
+        areas_new = np.array(areas_o[:4]).reshape(-1, 1)
 
-        vols = np.array(vols_o[:4]).reshape(-1, 1)
+        # generate a new time-axis that has three additional frames at the beginning of the known time-axis
+        # extrapolation is performed using this numpy array
+        time_extra_frames = np.arange(time_new[0] - 3, time_new[-1]).reshape(-1, 1)
+
         model = LinearRegression()  # create object for the class
-        model.fit(ts, vols)  # perform linear regression
-        first_list = [model.predict(ts_x)[0][0]]
-        final_vols = first_list + vols_o  # make a prediction for the preceding time-frame
+        model.fit(time_new, vols_new)  # perform linear regression
+        pred = model.predict(time_extra_frames)
+        extra_vol_values = [
+            pred[0][0] if pred[0][0] > 0 else 0,
+            pred[1][0] if pred[1][0] > 0 else 0,
+            pred[2][0] if pred[2][0] > 0 else 0
+        ]
+        final_vols = extra_vol_values + vols_o  # make a prediction for the preceding time-frame
 
-        areas = np.array(areas_o[:4]).reshape(-1, 1)
         model = LinearRegression()  # create object for the class
-        model.fit(ts, areas)  # perform linear regression
-        first_list = [model.predict(ts_x)[0][0]]
-        final_areas = first_list + areas_o  # make a prediction for the preceding time-frame
+        model.fit(time_new, areas_new)  # perform linear regression
+        pred = model.predict(time_extra_frames)
+        extra_area_values = [
+            pred[0][0] if pred[0][0] > 0 else 0,
+            pred[1][0] if pred[1][0] > 0 else 0,
+            pred[2][0] if pred[2][0] > 0 else 0
+        ]
+        final_areas = extra_area_values + areas_o  # make a prediction for the preceding time-frame
 
+        # loop over a list holding all time-points for this daughter and store the known ánd extrapolated areas/vols
         i = 0
-        for t in [ts_o[0] - 1] + ts_o:
+        for t in [time_o[0] - 3, time_o[0] - 2, time_o[0] - 1] + time_o:
             daughters_area_vol_data[t] = (final_areas[i], final_vols[i])
             i += 1
 
@@ -372,13 +381,12 @@ def get_data_for_all_cells():
     tiff_images = read_images()
     individual_cells = sorted([x for x in budj_data["Cell_pos"].unique() if 'd' not in x])
 
-                    # GET CELL DATA (AREA & VOLUME AND NUCLEAR AREA & VOLUME) FOR EVERY CELL
-
     nth_cell = 0
     final_volume_data = pd.DataFrame({})
-    for cell in individual_cells[:3]:
-        print(f"Generating volume data ({round(nth_cell / len(individual_cells) * 100)}% Done)", end="\r", flush=True)
 
+    # for every cell that was tracked using BudJ, we generate the area and volume data
+    for cell in individual_cells:
+        print(f"Generating volume data ( {round(nth_cell / len(individual_cells) * 100)}% )", end="\r", flush=True)
         # get right image from images dictionary and select the right channel (GFP)
         image = tiff_images[cell[3:5]]
         image_gfp = image[:, 1, :, :]
@@ -389,6 +397,8 @@ def get_data_for_all_cells():
 
         # extrapolate daughter cell data in such a way that the first timeframe has a volume of 0
         daughters_data = extrapolate_daughter_data(image_gfp, daughters_data)
+
+        # get the cell and nuclear areas and volumes for every frame that this cell was tracked
         cell_areas, cell_vols, nuc_areas, nuc_vols = get_data_for_all_timeframes(image_gfp, cell_data, daughters_data)
 
         # get the ratios
@@ -411,8 +421,8 @@ def get_data_for_all_cells():
     final_volume_data = remove_outliers(individual_cells, final_volume_data)
     final_volume_data = final_volume_data.reset_index(drop=True)
     final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data.xlsx")
+
     print("Generating volume data.. Done!")
-    sys.exit(0)
     return final_volume_data
 
 
@@ -442,7 +452,7 @@ def generate_separate_volume_plots(final_volume_data):
         save_figure(f"{output_dir}/plots/separate_cell_plots/{cell}_volumes_overT.png")
 
 
-def split_cycles_and_interpolate(final_volume_data, kario_events):
+def split_cycles_and_interpolate(final_volume_data):
     """
     Function responsible splitting the data of each cell on karyokinesis events, where after the data per
     cycle is interpolated to 100 datapoints.
@@ -450,6 +460,8 @@ def split_cycles_and_interpolate(final_volume_data, kario_events):
     :param kario_events:
     :return:
     """
+    kario_events = load_events()  # load the karyokinesis and budding events
+
     print("Performing interpolation on cell volume, nuc volume and n/c ratio data..", end="\r", flush=True)
     individual_cells = sorted(list(set(final_volume_data["Cell_pos"])))
     min_datapoints_for_interpolation = 10
@@ -594,57 +606,39 @@ def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated,
     print("Generating the averaged interpolated data plots.. Done!")
 
 
-def main(argv):
+def main():
     print("Getting started!")
     tic = time.perf_counter()  # start counter
 
-    # argument handling
-    do_plot = True
-    if len(argv) != 0:
-        if argv[0] == 'no_plots':
-            do_plot = False
-        elif argv[0] in ['-h', 'help']:
-            print('If you would like to skip generating any plots, execute the script like this:\n\n'
-                  'volume_analysis_script.py no_plots')
-            sys.exit(2)
-
-    # start of logic
-    budding_events, kario_events = load_events()  # load the karyokinesis and budding events
-
     # if volume dataset already exists, prevent generating this again and load it
     final_dataframe_path = f"{output_dir}excel/nup133_volume_data.xlsx"
-    if os.path.exists(final_dataframe_path):
+    if not os.path.exists(final_dataframe_path):
+        final_volume_data = get_data_for_all_cells()
+    else:
         print("Volume data has been generated already. The output file exists.")
         final_volume_data = pd.read_excel(final_dataframe_path)
-    else:
-        final_volume_data = get_data_for_all_cells()
 
     # generate a combined volumes plot for all cells separate
-    if do_plot: generate_separate_volume_plots(final_volume_data)
+    generate_separate_volume_plots(final_volume_data)
 
     # check if cycles have been split and interpolated, if not, do this
-    count = 0
-    for filename in os.listdir(f"{output_dir}excel/"):
-        if "cycles_interpolated" in filename and "~$" not in filename:
-            count += 1
-    if count == 3:
-        # load the interpolated files
-        print("Interpolation has already been performed. Output files exist.")
-        cell_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Cell_volumes.xlsx")
-        nuc_volumes_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_volumes.xlsx")
-        nc_ratios_interpolated = pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
+    file_count = sum(1 for s in os.listdir(f"{output_dir}excel/") if 'cycles_interpolated' in s)
+    if file_count != 3:
+        interpolated_dataframes = split_cycles_and_interpolate(final_volume_data)
     else:
-        interpolated_dataframes = split_cycles_and_interpolate(final_volume_data, kario_events)
-        cell_volumes_interpolated = interpolated_dataframes[0]
-        nuc_volumes_interpolated = interpolated_dataframes[1]
-        nc_ratios_interpolated = interpolated_dataframes[2]
+        print("Interpolation has already been performed. Output files exist. Loading them.")
+        interpolated_dataframes = [
+            pd.read_excel(f"{output_dir}excel/cycles_interpolated_Cell_volumes.xlsx"),
+            pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_volumes.xlsx"),
+            pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
+        ]
 
     # generate a plot per interpolated cycle
-    if do_plot: generate_interpolated_cycle_plots(cell_volumes_interpolated, nuc_volumes_interpolated,
-                                                  nc_ratios_interpolated)
+    generate_interpolated_cycle_plots(interpolated_dataframes[0], interpolated_dataframes[1],
+                                      interpolated_dataframes[2])
 
     # average the interpolated data and plot the result (cell volume, nucleus volume and N/C ratio)
-    if do_plot: generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated)
+    generate_averaged_plots(interpolated_dataframes[0], interpolated_dataframes[1], interpolated_dataframes[2])
 
     toc = time.perf_counter()
     secs = round(toc - tic, 4)
@@ -653,5 +647,5 @@ def main(argv):
 
 # SCRIPT STARTS HERE
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()
     sys.exit(0)
