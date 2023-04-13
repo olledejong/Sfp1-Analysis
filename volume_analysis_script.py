@@ -32,10 +32,22 @@ scaling_factor = 0.16  # microns per pixel ---> 100x objective
 bloc_size_frac_to_use = 0.09  # fraction of the total cell mask pixels that is used as local thresholding block size
 offset_to_use = -50  # offset for local thresholding
 
+###########################
+### Optimal cell cycles ###
+###########################
+# We only want to average over the cycles that include daughter bud data. This list is for that purpose
+cycles_to_average = {
+    "pos02_2": [1, 2], "pos03_1": [1], "pos03_3": [1], "pos05_1": [1], "pos06_2": [1], "pos07_1": [1],
+    "pos07_2": [1, 2], "pos08_1": [1, 2], "pos09_1": [1, 2, 3], "pos10_1": [1], "pos10_3": [1, 2], "pos11_2": [2],
+    "pos12_3": [1, 2], "pos13_1": [1], "pos13_2": [1], "pos13_3": [1], "pos14_1": [1], "pos14_3": [1], "pos15_1": [1],
+    "pos15_3": [1, 2], "pos16_1": [1], "pos16_2": [1], "pos18_1": [1], "pos18_2": [1], "pos20_2": [1],
+    "pos20_3": [1, 2], "pos20_4": [1, 2],
+}
 
-#################
-### FUNCTIONS ###
-#################
+
+#########################
+### GENERAL FUNCTIONS ###
+#########################
 def save_figure(path, bbox_inches='tight', dpi=300):
     """
     Custom function that lets you save a pyplot figure and creates the directory where necessary
@@ -48,10 +60,10 @@ def save_figure(path, bbox_inches='tight', dpi=300):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-    savepath = os.path.join(directory, filename)
+    save_path = os.path.join(directory, filename)
 
     # Actually save the figure
-    plt.savefig(savepath, bbox_inches=bbox_inches, dpi=dpi)
+    plt.savefig(save_path, bbox_inches=bbox_inches, dpi=dpi)
     plt.close()
 
 
@@ -138,10 +150,22 @@ def load_all_budj_data():
     return budj_data
 
 
+def read_images():
+    print("Reading tiff images..", end="\r", flush=True)
+    images = {}
+    for pos in range(1, 21):
+        if pos < 10:
+            pos = "0" + str(pos)
+        pos = str(pos)
+        images[pos] = imread(os.path.join(f"{tiff_files_dir}2022_12_06_nup133_yegfp_xy{pos}.nd2.tif"))  # load the image
+    print("Reading tiff images.. Done!")
+    return images
+
+
 def load_events():
     """
-    Using BudJ, the kyrokinesis and budding events have been tracked. This function loads that
-    data and stores it in a dictionary object.
+    Using BudJ, the karyokinesis events have been tracked. This function loads that data and stores it in a dictionary
+    object. This is later utilized when splitting the cell into separate cycles
     :return:
     """
     kario_events = {}
@@ -235,19 +259,29 @@ def remove_outliers(individual_cells, vol_data):
     return data_wo_outliers
 
 
-def read_images():
-    print("Reading tiff images..", end="\r", flush=True)
-    images = {}
-    for pos in range(1, 21):
-        if pos < 10:
-            pos = "0" + str(pos)
-        pos = str(pos)
-        images[pos] = imread(os.path.join(f"{tiff_files_dir}2022_12_06_nup133_yegfp_xy{pos}.nd2.tif"))  # load the image
-    print("Reading tiff images.. Done!")
-    return images
+def get_extrapolated_datapoints(time_extra_frames, time_partial, data_partial):
+    """
+    Takes a timerange that holds time-points for which extrapolated data is generated. The linear fit is made
+    based on the partial original time and data (either volume or area) axis
+    :param time_extra_frames:
+    :param time_partial:
+    :param data_partial:
+    :return:
+    """
+    model = LinearRegression()
+    model.fit(time_partial, data_partial)  # linear fit on (partial) original data
+    pred = model.predict(time_extra_frames)
+
+    extra_values = [
+        pred[0][0] if pred[0][0] > 0 else 0,
+        pred[1][0] if pred[1][0] > 0 else 0,
+        pred[2][0] if pred[2][0] > 0 else 0
+    ]
+
+    return extra_values
 
 
-def extrapolate_daughter_data(image_gfp, daughters_data):
+def get_extrapolated_bud_data(image_gfp, daughters_data):
     """
     This function takes the original budj daughter dataframe and extrapolates the daughter data backwards until the
     volume hits zero. This is done through linear extrapolation on the first few datapoints of the daughter volume.
@@ -256,10 +290,14 @@ def extrapolate_daughter_data(image_gfp, daughters_data):
 
     # first we need to get the daughters area and volume on the time-points that are defined.
     daughters_area_vol_data = {}
+
     individual_daughters = sorted([x for x in daughters_data["Cell_pos"].unique()])
     for cell in individual_daughters:
+
         daughter_data = daughters_data[daughters_data["Cell_pos"] == cell]
         daughter_area_vol_data = []
+
+        # generate the area and volumes for the know data-points of the daughter cell
         for t in daughter_data.TimeID:
             t_in_tiff = t - 1
             imageGFP_at_frame = image_gfp[t_in_tiff, :, :]
@@ -274,44 +312,28 @@ def extrapolate_daughter_data(image_gfp, daughters_data):
         vols_o = [time_point[2] for time_point in daughter_area_vol_data]
 
         # perform extrapolation only on first 4 datapoints
-        time_new = np.array(time_o[:4]).reshape(-1, 1)
-        vols_new = np.array(vols_o[:4]).reshape(-1, 1)
-        areas_new = np.array(areas_o[:4]).reshape(-1, 1)
+        time_partial = np.array(time_o[:4]).reshape(-1, 1)
+        vols_partial = np.array(vols_o[:4]).reshape(-1, 1)
+        areas_partial = np.array(areas_o[:4]).reshape(-1, 1)
 
         # generate a new time-axis that has three additional frames at the beginning of the known time-axis
         # extrapolation is performed using this numpy array
-        time_extra_frames = np.arange(time_new[0] - 3, time_new[-1]).reshape(-1, 1)
+        time_extra_frames = np.arange(time_partial[0] - 3, time_partial[-1]).reshape(-1, 1)
 
-        model = LinearRegression()  # create object for the class
-        model.fit(time_new, vols_new)  # perform linear regression
-        pred = model.predict(time_extra_frames)
-        extra_vol_values = [
-            pred[0][0] if pred[0][0] > 0 else 0,
-            pred[1][0] if pred[1][0] > 0 else 0,
-            pred[2][0] if pred[2][0] > 0 else 0
-        ]
-        final_vols = extra_vol_values + vols_o  # make a prediction for the preceding time-frame
-
-        model = LinearRegression()  # create object for the class
-        model.fit(time_new, areas_new)  # perform linear regression
-        pred = model.predict(time_extra_frames)
-        extra_area_values = [
-            pred[0][0] if pred[0][0] > 0 else 0,
-            pred[1][0] if pred[1][0] > 0 else 0,
-            pred[2][0] if pred[2][0] > 0 else 0
-        ]
-        final_areas = extra_area_values + areas_o  # make a prediction for the preceding time-frame
+        final_vols = get_extrapolated_datapoints(time_extra_frames, time_partial, vols_partial) + vols_o
+        final_areas = get_extrapolated_datapoints(time_extra_frames, time_partial, areas_partial) + areas_o
 
         # loop over a list holding all time-points for this daughter and store the known ánd extrapolated areas/vols
         i = 0
-        for t in [time_o[0] - 3, time_o[0] - 2, time_o[0] - 1] + time_o:
+        time_points = [time_o[0] - 3, time_o[0] - 2, time_o[0] - 1] + time_o
+        for t in time_points:
             daughters_area_vol_data[t] = (final_areas[i], final_vols[i])
             i += 1
 
     return daughters_area_vol_data
 
 
-def get_data_for_all_timeframes(image_gfp, single_cell_data, daughters_data):
+def get_data_for_single_cell(image_gfp, single_cell_data, daughters_data):
     """
     This function, for the given cell, calculates the nuclear and cell areas and nuclear and cell volumes at all
     time-frames. The whole-cell area and volume are incremented with daughter's area and volume when one exists.
@@ -377,7 +399,6 @@ def get_data_for_all_cells():
     :return:
     """
     budj_data = load_all_budj_data()
-    # budj_data = extrapolate_daughter_buds(budj_data)
     tiff_images = read_images()
     individual_cells = sorted([x for x in budj_data["Cell_pos"].unique() if 'd' not in x])
 
@@ -396,10 +417,10 @@ def get_data_for_all_cells():
         daughters_data = budj_data[budj_data["Cell_pos"].str.contains(f"{cell}_d")].sort_values(by="TimeID")
 
         # extrapolate daughter cell data in such a way that the first timeframe has a volume of 0
-        daughters_data = extrapolate_daughter_data(image_gfp, daughters_data)
+        daughters_data = get_extrapolated_bud_data(image_gfp, daughters_data)
 
         # get the cell and nuclear areas and volumes for every frame that this cell was tracked
-        cell_areas, cell_vols, nuc_areas, nuc_vols = get_data_for_all_timeframes(image_gfp, cell_data, daughters_data)
+        cell_areas, cell_vols, nuc_areas, nuc_vols = get_data_for_single_cell(image_gfp, cell_data, daughters_data)
 
         # get the ratios
         ratios = []
@@ -426,52 +447,26 @@ def get_data_for_all_cells():
     return final_volume_data
 
 
-def generate_separate_volume_plots(final_volume_data):
-    """
-    Creates a separate plot for every cell that displays the nuclear and whole-cell volumes
-    together. This might give a good overview on the data quality per cell.
-    :param final_volume_data:
-    :return:
-    """
-    individual_cells = sorted(list(set(final_volume_data["Cell_pos"])))  # how many cells are there in total
-    for cell in individual_cells:
-        print(f"Generating volume plot per cell, {round(individual_cells.index(cell) / len(individual_cells) * 100)}% "
-              f"done..", end="\r", flush=True)
-        fig, axs = plt.subplots(2, figsize=(5, 5))
-        fig.supxlabel("Time (frames)")
-        fig.supylabel("Volume (µm\u00b3)")
-        fig.subplots_adjust(hspace=0.35, wspace=0.4)
-        fig.suptitle(f"{cell} - Whole cell and nuclear volumes over time")
-        single_cell_data = final_volume_data[final_volume_data.Cell_pos == cell]
-        single_cell_data = single_cell_data[~single_cell_data.Nucleus_volume.isnull()]
-
-        axs[0].plot(single_cell_data.TimeID, single_cell_data.Cell_volume, 'r')
-        axs[0].set_title("Whole cell volume", fontstyle='italic', y=1.02)
-        axs[1].plot(single_cell_data.TimeID, single_cell_data.Nucleus_volume, 'y')
-        axs[1].set_title("Nuclear volume", fontstyle='italic', y=1.02)
-        save_figure(f"{output_dir}/plots/separate_cell_plots/{cell}_volumes_overT.png")
-
-
 def split_cycles_and_interpolate(final_volume_data):
     """
     Function responsible splitting the data of each cell on karyokinesis events, where after the data per
     cycle is interpolated to 100 datapoints.
     :param final_volume_data:
-    :param kario_events:
-    :return:
+    :return interpolated_dataframes: a list with the interpolated dataframes
     """
-    kario_events = load_events()  # load the karyokinesis and budding events
-
     print("Performing interpolation on cell volume, nuc volume and n/c ratio data..", end="\r", flush=True)
+
+    kario_events = load_events()  # load the karyokinesis and budding events
     individual_cells = sorted(list(set(final_volume_data["Cell_pos"])))
-    min_datapoints_for_interpolation = 10
+
+    min_dp_for_int = 10
     desired_datapoints = 100
     cols = ["cell", "cycle", "start", "end"]
     cols += range(desired_datapoints)
 
     interpolated_dataframes = []
     tot_under = 0
-    for data_type in ["Cell_volume", "Nucleus_volume", "N/C_ratio"]:  # interpolate the columns in this list
+    for data_type in ["Cell_area", "Cell_volume", "Nucleus_area", "Nucleus_volume", "N/C_ratio"]:
         data_interpolated = pd.DataFrame(columns=cols)
 
         for cell in individual_cells[1:]:  # remove cell pos01_1, since it has too many missing frames
@@ -481,11 +476,11 @@ def split_cycles_and_interpolate(final_volume_data):
             count = 0
             while count < len(kario_events[cell]) - 1:
                 tp1 = kario_events[cell][count] + 1
-                tp2 = kario_events[cell][count + 1] + 2  # extend by a frame to see real impact of karyokinesis
+                tp2 = kario_events[cell][count + 1]  # extend by a frame to see real impact of karyokinesis
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
                 # when there are not enough datapoints (because of outlier removal) for this cycle, ignore it
-                if len(cell_cycle_dat) < min_datapoints_for_interpolation:
+                if len(cell_cycle_dat) < min_dp_for_int:
                     tot_under += 1
                     count += 1
                     continue
@@ -496,47 +491,102 @@ def split_cycles_and_interpolate(final_volume_data):
 
                 # interpolate the data towards 100 datapoints
                 x_new = np.linspace(0, len(cell_cycle_dat), desired_datapoints)
-                f2 = interpolate.interp1d(x, y, kind='cubic')
+                f2 = interpolate.interp1d(x, y, kind='linear')
 
                 # add the interpolated data to a dataframe
                 data_interpolated.loc[len(data_interpolated)] = [cell, count + 1, tp1, tp2] + f2(x_new).tolist()
                 count += 1
 
-        if data_type == "N/C_ratio": data_type = "NC_ratio"  # cannot save file
+        if data_type == "N/C_ratio": data_type = "NC_ratio"
         data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_{data_type}s.xlsx")
         interpolated_dataframes.append(data_interpolated)
 
     print("Performing interpolation on cell volume, nuc volume and n/c ratio data.. Done!")
-    print(f"There were {tot_under} cycles removed among the three dataframes because they had less than "
-          f"{min_datapoints_for_interpolation} datapoints.")
+    print(
+        f"There were {tot_under} cycles removed among that had not enough datapoints (less than {min_dp_for_int}).")
     return interpolated_dataframes
 
 
-def generate_interpolated_cycle_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated):
+def keep_wanted_cycles(interpolated_dataframes):
     """
-    This function takes the data of the three main datatypes of interest and creates a plot of each one for every cycle.
-    :param cell_volumes_interpolated:
-    :param nuc_volumes_interpolated:
-    :param nc_ratios_interpolated:
+    Removes the cycles from the dataframes which do not include daughter bud data. Which cycles are
+    wanted (per cell) are held in the cycles_to_average global dictionary.
+    :param interpolated_dataframes:
     :return:
     """
-    interpolated_dataframes = [
-        ("Cell volume", cell_volumes_interpolated, "Cell volume (µm\u00b3)"),
-        ("Nucleus volume", nuc_volumes_interpolated, "Nucleus volume (µm\u00b3)"),
-        ("NC ratio", nc_ratios_interpolated, "N/C ratio")
+    interpolated_dataframes_wanted_cycles = []
+
+    for df in interpolated_dataframes:
+        for index, row in df.iterrows():
+            cell_pos = row['cell']
+            if not (cell_pos in cycles_to_average.keys() and row['cycle'] in cycles_to_average[cell_pos]):
+                df = df.drop([index])
+
+        df = df.reset_index(drop=True)
+        interpolated_dataframes_wanted_cycles.append(df)
+
+    return interpolated_dataframes_wanted_cycles
+
+
+                                            ##########################
+                                            ### Plotting functions ###
+                                            ##########################
+
+def generate_separate_volume_plots(final_volume_data):
+    """
+    Creates a separate plot for every cell that displays the nuclear and whole-cell volumes
+    together. This might give a good overview on the data quality per cell.
+    :param final_volume_data:
+    :return:
+    """
+    individual_cells = sorted(list(set(final_volume_data["Cell_pos"])))  # amount of cells
+
+    for cell in individual_cells:
+        progress = round(individual_cells.index(cell) / len(individual_cells) * 100)
+        print(f"Generating volume plot per cell ( {progress}% )", end="\r", flush=True)
+
+        fig, axs = plt.subplots(2, figsize=(5, 5))
+        fig.supxlabel("Time (frames)")
+        fig.supylabel("Volume (µm\u00b3)")
+        fig.subplots_adjust(hspace=0.35, wspace=0.4)
+        fig.suptitle(f"{cell} - Whole cell and nuclear volumes over time")
+
+        single_cell_data = final_volume_data[final_volume_data.Cell_pos == cell]
+        single_cell_data = single_cell_data[~single_cell_data.Nucleus_volume.isnull()]
+
+        axs[0].plot(single_cell_data.TimeID, single_cell_data.Cell_volume, 'r')
+        axs[0].set_title("Whole cell volume", fontstyle='italic', y=1.02)
+        axs[1].plot(single_cell_data.TimeID, single_cell_data.Nucleus_volume, 'y')
+        axs[1].set_title("Nuclear volume", fontstyle='italic', y=1.02)
+
+        save_figure(f"{output_dir}/plots/separate_cell_plots/{cell}_volumes_overT.png")
+
+
+def generate_interpolated_cycle_plots(interpolated_dataframes):
+    """
+    This function takes the data of the three main datatypes of interest and creates a plot of each one for every cycle.
+    :param interpolated_dataframes:
+    :return:
+    """
+    dataframes = [
+        ("Cell area", interpolated_dataframes[0], "Cell area (µm\u00b2)"),
+        ("Cell volume", interpolated_dataframes[1], "Cell volume (µm\u00b3)"),
+        ("Nucleus area", interpolated_dataframes[2], "Nucleus area (µm\u00b2)"),
+        ("Nucleus volume", interpolated_dataframes[3], "Nucleus volume (µm\u00b3)"),
+        ("NC ratio", interpolated_dataframes[4], "N/C ratio")
     ]
     progress = 1
-    total_runs = len(cell_volumes_interpolated) + len(nuc_volumes_interpolated) + len(nc_ratios_interpolated)
-    for interpolated_dataframe in interpolated_dataframes:
+    runs = sum(len(df) for df in interpolated_dataframes)
+    for interpolated_dataframe in dataframes:
         count = 0
         data_type = interpolated_dataframe[0]
         while count < len(interpolated_dataframe[1]):
-            print(f"Generating interpolated cycle plots, {round(progress / total_runs * 100)}% done..", end="\r",
-                  flush=True)
+            print(f"Generating interpolated cycle plots ( {round(progress / runs * 100)}% )", end="\r", flush=True)
             single_cycle_data = interpolated_dataframe[1].iloc[count]
-            plt.plot(single_cycle_data[5:].values, 'r', linewidth=3)
             cell_name = single_cycle_data['cell']
             cycle_id = single_cycle_data['cycle']
+
+            plt.plot(single_cycle_data[5:].values, 'r', linewidth=3)
             plt.title(f"{cell_name}, cycle {cycle_id}, {data_type} (interpolated)", fontstyle='italic', y=1.02)
             plt.xlabel("Time")
             plt.ylabel(interpolated_dataframe[2])
@@ -578,32 +628,44 @@ def generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interp
     save_figure(f"{output_dir}plots/interpolated_averaged/Volumes_together.png")
 
 
-def generate_averaged_plots(cell_volumes_interpolated, nuc_volumes_interpolated, nc_ratios_interpolated):
+def generate_averaged_plots(interpolated_dataframes):
     """
     Takes the interpolated data files (Excel files) and averages these. The averages are plotted over time and
     saved to the user's system.
     :return:
     """
     print("Generating the averaged interpolated data plots..", end="\r", flush=True)
-    data_list = [  # average the interpolated cycles
-        ("Cell volume", cell_volumes_interpolated.mean(axis=0, numeric_only=True), "µm\u00b3"),
-        ("Nuclear volume", nuc_volumes_interpolated.mean(axis=0, numeric_only=True), "µm\u00b3"),
-        ("N/C ratio", nc_ratios_interpolated.mean(axis=0, numeric_only=True), None)
+    # keep only the cycles that include daughter data
+
+    to_plot = [
+        ("Cell area", interpolated_dataframes[0].mean(axis=0, numeric_only=True), "µm\u00b2"),
+        ("Cell volume", interpolated_dataframes[1].mean(axis=0, numeric_only=True), "µm\u00b3"),
+        ("Nuclear area", interpolated_dataframes[2].mean(axis=0, numeric_only=True), "µm\u00b2"),
+        ("Nuclear volume", interpolated_dataframes[3].mean(axis=0, numeric_only=True), "µm\u00b3"),
+        ("N/C ratio", interpolated_dataframes[4].mean(axis=0, numeric_only=True), None)
     ]
 
-    for data in data_list:
-        plt.plot(data[1][4:].values, 'r', linewidth=3)
-        plt.title(f"Average {data[0]} over time", fontstyle='italic', y=1.02)
+    for item in to_plot:
+        data_type = item[0]
+        unit = item[2]
+
+        plt.plot(item[1][4:].values, 'r', linewidth=3)
+        plt.title(f"Average {data_type} over time", fontstyle='italic', y=1.02)
         plt.xlabel("Time")
-        if data[2] is not None:
-            plt.ylabel(f"{data[0]} ({data[2]})")
+        if unit is not None:
+            plt.ylabel(f"{data_type} ({unit})")
         else:
-            plt.ylabel(data[0])
-        filename = "NC ratio" if data[0] == "N/C ratio" else data[0]
+            plt.ylabel(data_type)
+        filename = "NC ratio" if data_type == "N/C ratio" else data_type
         save_figure(f"{output_dir}plots/interpolated_averaged/{filename}.png")
 
-    generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated)
+    generate_combined_volumes_plot(interpolated_dataframes[1], interpolated_dataframes[3])
     print("Generating the averaged interpolated data plots.. Done!")
+
+
+                                            #####################
+                                            ### Main function ###
+                                            #####################
 
 
 def main():
@@ -623,22 +685,24 @@ def main():
 
     # check if cycles have been split and interpolated, if not, do this
     file_count = sum(1 for s in os.listdir(f"{output_dir}excel/") if 'cycles_interpolated' in s)
-    if file_count != 3:
+    if file_count != 5:
         interpolated_dataframes = split_cycles_and_interpolate(final_volume_data)
     else:
         print("Interpolation has already been performed. Output files exist. Loading them.")
         interpolated_dataframes = [
+            pd.read_excel(f"{output_dir}excel/cycles_interpolated_Cell_areas.xlsx"),
             pd.read_excel(f"{output_dir}excel/cycles_interpolated_Cell_volumes.xlsx"),
+            pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_areas.xlsx"),
             pd.read_excel(f"{output_dir}excel/cycles_interpolated_Nucleus_volumes.xlsx"),
             pd.read_excel(f"{output_dir}excel/cycles_interpolated_NC_ratios.xlsx")
         ]
 
     # generate a plot per interpolated cycle
-    generate_interpolated_cycle_plots(interpolated_dataframes[0], interpolated_dataframes[1],
-                                      interpolated_dataframes[2])
+    generate_interpolated_cycle_plots(interpolated_dataframes)
 
     # average the interpolated data and plot the result (cell volume, nucleus volume and N/C ratio)
-    generate_averaged_plots(interpolated_dataframes[0], interpolated_dataframes[1], interpolated_dataframes[2])
+    interpolated_dataframes_wanted_cycles = keep_wanted_cycles(interpolated_dataframes)
+    generate_averaged_plots(interpolated_dataframes_wanted_cycles)
 
     toc = time.perf_counter()
     secs = round(toc - tic, 4)
