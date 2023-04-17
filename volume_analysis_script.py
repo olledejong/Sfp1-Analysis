@@ -34,13 +34,14 @@ offset_to_use = -50  # offset for local thresholding
 ###########################
 ### Optimal cell cycles ###
 ###########################
-# We only want to average over the cycles that include daughter bud data. This list is for that purpose
+# We only want to average over the cycles that include daughter bud data. This list is for that purpose.
+# In addition, few cycles have been removed manually because of low data quality.
+# These are: 06_2c1, 08_1c1, 10_3c2, 18_1c1 and 18_2c1
 cycles_to_average = {
-    "pos02_2": [1, 2], "pos03_1": [1], "pos03_3": [1], "pos05_1": [1], "pos06_2": [1], "pos07_1": [1],
-    "pos07_2": [1, 2], "pos08_1": [1, 2], "pos09_1": [1, 2, 3], "pos10_1": [1], "pos10_3": [1, 2], "pos11_2": [2],
-    "pos12_3": [1, 2], "pos13_1": [1], "pos13_2": [1], "pos13_3": [1], "pos14_1": [1], "pos14_3": [1], "pos15_1": [1],
-    "pos15_3": [1, 2], "pos16_1": [1], "pos16_2": [1], "pos18_1": [1], "pos18_2": [1], "pos20_2": [1],
-    "pos20_3": [1, 2], "pos20_4": [1, 2],
+    "pos02_2": [1, 2], "pos03_1": [1], "pos03_3": [1], "pos05_1": [1], "pos07_1": [1],  "pos07_2": [1, 2],
+    "pos08_1": [2], "pos09_1": [1, 2, 3], "pos10_1": [1], "pos10_3": [1], "pos11_2": [2], "pos12_3": [1, 2],
+    "pos13_1": [1], "pos13_2": [1], "pos13_3": [1], "pos14_1": [1], "pos14_3": [1], "pos15_1": [1], "pos15_3": [1, 2],
+    "pos16_1": [1], "pos16_2": [1], "pos20_2": [1], "pos20_3": [1, 2], "pos20_4": [1, 2],
 }
 
 
