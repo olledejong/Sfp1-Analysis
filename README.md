@@ -19,7 +19,7 @@ that shows how the final results were obtained.
 3. Run the notebook file chunk by chunk when you're uncertain.
 
 ### Volume analysis script
-The ```volume_analysis_script.py``` file was created after ```volume_analyis.ipynb```, and is the optimized version of
+The ```volume_analysis.py``` file was created after ```volume_analyis.ipynb```, and is the optimized version of
 the entire workflow. It thus only contains the parts that are essential, and which contribute to the most optimal result.
 #### Setup
 1. Make sure to check all hard-coded filepaths at the top of the file are configured correctly.
