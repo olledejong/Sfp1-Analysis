@@ -172,7 +172,7 @@ def combined_interpolated_volume_cycles(interpolated_dataframes, interpolated_da
 
         plt.title(f"Whole-cell volume of different cycles (interpolated)", fontstyle='italic', y=1.02)
         plt.xlabel("Time")
-        plt.xlabel("Volume (µm\u00b3)")
+        plt.ylabel("Volume (µm\u00b3)")
         save_figure(save_string)
         plt.close()
         count += 1
