@@ -173,7 +173,7 @@ def load_events():
 
 def get_area_and_vol(minor_r, major_r):
     """
-    Calculates the area and the volume of an ellipse using the major and minor radii
+    Calculates the surface area and the volume of an ellipse using the major and minor radii
     :param minor_r:
     :param major_r:
     :return:
@@ -511,6 +511,24 @@ def keep_wanted_cycles(interpolated_dataframes):
 
     return interpolated_dataframes_wanted_cycles
 
+
+def save_data_for_model(interpolated_dataframes_wanted_cycles):
+    """
+    Saves the averaged surface area, whole-cell volume and nuclear volume series to a csv file that will be used
+    for modelling purposes.
+    :param interpolated_dataframes_wanted_cycles:
+    :return:
+    """
+
+    final_averages = pd.DataFrame(
+        {
+            'cell_surface_areas': interpolated_dataframes_wanted_cycles[0].mean(axis=0, numeric_only=True)[4:].values,
+            'cell_volumes': interpolated_dataframes_wanted_cycles[1].mean(axis=0, numeric_only=True)[4:].values,
+            'nuclear_volumes': interpolated_dataframes_wanted_cycles[3].mean(axis=0, numeric_only=True)[4:].values
+        }
+    )
+    final_averages.to_excel(f"{output_dir}excel/final_averages_for_model.xlsx")
+
     #####################
     ### Main function ###
     #####################
@@ -556,6 +574,8 @@ def main():
 
     # average the interpolated data and plot the result (cell volume, nucleus volume and N/C ratio)
     generate_plots.averaged_plots(interpolated_dataframes_wanted_cycles)
+
+    save_data_for_model(interpolated_dataframes_wanted_cycles)
 
     toc = time.perf_counter()
     secs = round(toc - tic, 4)
