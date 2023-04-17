@@ -169,12 +169,15 @@ def combined_interpolated_volume_cycles(interpolated_dataframes, interpolated_da
             plt.plot(row[6:].values, linewidth=1, color=col)
         if count == 1:
             save_string = f"{output_dir}plots/cycle_volumes_in_one/all_cycles.png"
+            title = "Whole-cell volume of all cycles (interpolated)"
         elif count == 2:
             save_string = f"{output_dir}plots/cycle_volumes_in_one/wanted_cycles.png"
+            title = "Whole-cell volume of high-quality cycles (interpolated)"
         else:
             save_string = f"{output_dir}plots/cycle_volumes_in_one/unwanted_cycles.png"
+            title = "Whole-cell volume of the low-quality cycles (interpolated)"
 
-        plt.title(f"Whole-cell volume of different cycles (interpolated)", fontstyle='italic', y=1.02)
+        plt.title(title, fontstyle='italic', y=1.02)
         plt.xlabel("Time")
         plt.ylabel("Volume (µm\u00b3)")
         save_figure(save_string)
