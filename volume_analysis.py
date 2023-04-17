@@ -185,7 +185,7 @@ def get_area_and_vol(minor_r, major_r):
     r2c = (minor_r * scaling_factor) / 2  # from pixels to µm using scaling factor
     r3c = (np.average((major_r, minor_r)) * scaling_factor) / 2  # third axis of ellipse is average of two known ones
     VOL = (4 / 3) * pi * r1c * r2c * r3c  # VOL: µm * µm * µm --> cubic µm
-    SA = 4 * pi * (((r1c * r2c) ^ 1.6075 + (r1c * r3c) ^ 1.6075 + (r2c * r3c) ^ 1.6075) / 3) ^ (1 / 1.6075)
+    SA = 4 * pi * (((r1c * r2c) ** 1.6075 + (r1c * r3c) ** 1.6075 + (r2c * r3c) ** 1.6075) / 3) ** (1 / 1.6075)
     # SA: µm *  µm --> squared µm
     return SA, VOL
 
