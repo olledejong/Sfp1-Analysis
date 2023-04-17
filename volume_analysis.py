@@ -38,7 +38,7 @@ offset_to_use = -50  # offset for local thresholding
 # In addition, few cycles have been removed manually because of low data quality.
 # These are: 06_2c1, 08_1c1, 10_3c2, 18_1c1 and 18_2c1
 cycles_to_average = {
-    "pos02_2": [1, 2], "pos03_1": [1], "pos03_3": [1], "pos05_1": [1], "pos07_1": [1],  "pos07_2": [1, 2],
+    "pos02_2": [1, 2], "pos03_1": [1], "pos03_3": [1], "pos05_1": [1], "pos07_1": [1], "pos07_2": [1, 2],
     "pos08_1": [2], "pos09_1": [1, 2, 3], "pos10_1": [1], "pos10_3": [1], "pos11_2": [2], "pos12_3": [1, 2],
     "pos13_1": [1], "pos13_2": [1], "pos13_3": [1], "pos14_1": [1], "pos14_3": [1], "pos15_1": [1], "pos15_3": [1, 2],
     "pos16_1": [1], "pos16_2": [1], "pos20_2": [1], "pos20_3": [1, 2], "pos20_4": [1, 2],
@@ -121,7 +121,8 @@ def load_all_budj_data():
             temp_data.loc[len(temp_data) + 1] = row.values
 
         # keep only the following columns
-        temp_data = temp_data.loc[:, ["TimeID", "Time (min)", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
+        temp_data = temp_data.loc[:,
+                    ["TimeID", "Time (min)", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
 
         # save the mother + daughter data to the bigger dataframe holding data for all mothers + daughters
         budj_data = pd.concat([budj_data, temp_data])
@@ -183,9 +184,10 @@ def get_area_and_vol(minor_r, major_r):
     r1c = (major_r * scaling_factor) / 2  # from pixels to µm using scaling factor
     r2c = (minor_r * scaling_factor) / 2  # from pixels to µm using scaling factor
     r3c = (np.average((major_r, minor_r)) * scaling_factor) / 2  # third axis of ellipse is average of two known ones
-    volume = (4 / 3) * pi * r1c * r2c * r3c  # µm * µm * µm --> cubic µm
-    area = pi * r1c * r2c  # µm * µm --> squared µm
-    return area, volume
+    VOL = (4 / 3) * pi * r1c * r2c * r3c  # VOL: µm * µm * µm --> cubic µm
+    SA = 4 * pi * (((r1c * r2c) ^ 1.6075 + (r1c * r3c) ^ 1.6075 + (r2c * r3c) ^ 1.6075) / 3) ^ (1 / 1.6075)
+    # SA: µm *  µm --> squared µm
+    return SA, VOL
 
 
 def get_whole_cell_mask(t, single_cell_data, image_shape):
@@ -509,10 +511,9 @@ def keep_wanted_cycles(interpolated_dataframes):
 
     return interpolated_dataframes_wanted_cycles
 
-
-                                            #####################
-                                            ### Main function ###
-                                            #####################
+    #####################
+    ### Main function ###
+    #####################
 
 
 def main():
