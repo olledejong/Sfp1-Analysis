@@ -2,6 +2,7 @@ import os
 import matplotlib.pyplot as plt
 from volume_analysis import output_dir
 import numpy as np
+import pandas as pd
 
 plt.style.use('seaborn-v0_8')
 
@@ -159,16 +160,19 @@ def averaged_plots(interpolated_dataframes):
 def combined_interpolated_volume_cycles(interpolated_dataframes, interpolated_dataframes_wanted_cycles):
     cell_volume_cycles = interpolated_dataframes[1]
     cell_volume_cycles_wanted_cycles = interpolated_dataframes_wanted_cycles[1]
+    diff = pd.concat([cell_volume_cycles, cell_volume_cycles_wanted_cycles]).drop_duplicates(keep=False)
 
     count = 1
-    for df in [cell_volume_cycles, cell_volume_cycles_wanted_cycles]:
+    for df in [cell_volume_cycles, cell_volume_cycles_wanted_cycles, diff]:
         for index, row in df.iterrows():
             col = (np.random.random(), np.random.random(), np.random.random())
             plt.plot(row[6:].values, linewidth=1, color=col)
         if count == 1:
             save_string = f"{output_dir}plots/cycle_volumes_in_one/all_cycles.png"
-        else:
+        elif count == 2:
             save_string = f"{output_dir}plots/cycle_volumes_in_one/wanted_cycles.png"
+        else:
+            save_string = f"{output_dir}plots/cycle_volumes_in_one/unwanted_cycles.png"
 
         plt.title(f"Whole-cell volume of different cycles (interpolated)", fontstyle='italic', y=1.02)
         plt.xlabel("Time")
