@@ -1,6 +1,7 @@
 import os
 import matplotlib.pyplot as plt
-from volume_analysis_script import output_dir
+from volume_analysis import output_dir
+import numpy as np
 
 plt.style.use('seaborn-v0_8')
 
@@ -54,7 +55,7 @@ def combined_volumes(final_volume_data):
         save_figure(f"{output_dir}/plots/separate_cell_plots/{cell}_volumes_overT.png")
 
 
-def interpolated_cycles(interpolated_dataframes):
+def separate_interpolated_cycles(interpolated_dataframes):
     """
     This function takes the data of the three main datatypes of interest and creates a plot of each one for every cycle.
     :param interpolated_dataframes:
@@ -89,7 +90,7 @@ def interpolated_cycles(interpolated_dataframes):
             progress += 1
 
 
-def generate_combined_volumes_plot(cell_volumes_interpolated, nuc_volumes_interpolated):
+def averaged_combined_volumes(cell_volumes_interpolated, nuc_volumes_interpolated):
     """
     This function generates one of the final products of this script, namely a plot which shows the nuclear
     and whole-cell volumes over time. This data is interpolated to 100 datapoints per cycle, where after an average
@@ -151,6 +152,27 @@ def averaged_plots(interpolated_dataframes):
         filename = "NC ratio" if data_type == "N/C ratio" else data_type
         save_figure(f"{output_dir}plots/interpolated_averaged/{filename}.png")
 
-    generate_combined_volumes_plot(interpolated_dataframes[1], interpolated_dataframes[3])
+    averaged_combined_volumes(interpolated_dataframes[1], interpolated_dataframes[3])
     print("Generating the averaged interpolated data plots.. Done!")
 
+
+def combined_interpolated_volume_cycles(interpolated_dataframes, interpolated_dataframes_wanted_cycles):
+    cell_volume_cycles = interpolated_dataframes[1]
+    cell_volume_cycles_wanted_cycles = interpolated_dataframes_wanted_cycles[1]
+
+    count = 1
+    for df in [cell_volume_cycles, cell_volume_cycles_wanted_cycles]:
+        for index, row in df.iterrows():
+            col = (np.random.random(), np.random.random(), np.random.random())
+            plt.plot(row[6:].values, linewidth=1, color=col)
+        if count == 1:
+            save_string = f"{output_dir}plots/cycle_volumes_in_one/all_cycles.png"
+        else:
+            save_string = f"{output_dir}plots/cycle_volumes_in_one/wanted_cycles.png"
+
+        plt.title(f"Whole-cell volume of different cycles (interpolated)", fontstyle='italic', y=1.02)
+        plt.xlabel("Time")
+        plt.xlabel("Volume (µm\u00b3)")
+        save_figure(save_string)
+        plt.close()
+        count += 1

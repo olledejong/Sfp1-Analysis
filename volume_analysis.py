@@ -457,7 +457,7 @@ def split_cycles_and_interpolate(final_volume_data):
 
             count = 0
             while count < len(kario_events[cell]) - 1:
-                tp1 = kario_events[cell][count] + 1
+                tp1 = kario_events[cell][count] + 2
                 tp2 = kario_events[cell][count + 1]  # extend by a frame to see real impact of karyokinesis
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
@@ -545,10 +545,15 @@ def main():
         ]
 
     # generate a plot per interpolated cycle
-    generate_plots.interpolated_cycles(interpolated_dataframes)
+    generate_plots.separate_interpolated_cycles(interpolated_dataframes)
+
+    # keep only the cycles that include daughter bud data and are of good quality
+    interpolated_dataframes_wanted_cycles = keep_wanted_cycles(interpolated_dataframes)
+
+    # create two figures; one that holds all whole-cell volume cycles, and one that only holds the 'best' ones
+    generate_plots.combined_interpolated_volume_cycles(interpolated_dataframes, interpolated_dataframes_wanted_cycles)
 
     # average the interpolated data and plot the result (cell volume, nucleus volume and N/C ratio)
-    interpolated_dataframes_wanted_cycles = keep_wanted_cycles(interpolated_dataframes)
     generate_plots.averaged_plots(interpolated_dataframes_wanted_cycles)
 
     toc = time.perf_counter()
