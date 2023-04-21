@@ -487,7 +487,7 @@ def split_cycles_and_interpolate(final_volume_data):
 
     print("Performing interpolation on cell volume, nuc volume and n/c ratio data.. Done!")
     print(
-        f"There were {tot_under} cycles removed among that had not enough datapoints (less than {min_dp_for_int}).")
+        f"There were {tot_under} cycles removed that had not enough datapoints (less than {min_dp_for_int}).")
     return interpolated_dataframes
 
 
