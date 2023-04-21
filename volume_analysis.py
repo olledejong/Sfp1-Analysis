@@ -460,7 +460,7 @@ def split_cycles_and_interpolate(final_volume_data):
             count = 0
             while count < len(kario_events[cell]) - 1:
                 tp1 = kario_events[cell][count] + 2
-                tp2 = kario_events[cell][count + 1]  # extend by a frame to see real impact of karyokinesis
+                tp2 = kario_events[cell][count + 1]
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
                 # when there are not enough datapoints (because of outlier removal) for this cycle, ignore it
@@ -522,9 +522,9 @@ def save_data_for_model(interpolated_dataframes_wanted_cycles):
 
     final_averages = pd.DataFrame(
         {
-            'cell_surface_areas': interpolated_dataframes_wanted_cycles[0].mean(axis=0, numeric_only=True)[4:].values,
             'cell_volumes': interpolated_dataframes_wanted_cycles[1].mean(axis=0, numeric_only=True)[4:].values,
-            'nuclear_volumes': interpolated_dataframes_wanted_cycles[3].mean(axis=0, numeric_only=True)[4:].values
+            'nuc_surface_areas': interpolated_dataframes_wanted_cycles[2].mean(axis=0, numeric_only=True)[4:].values,
+            'nuc_volumes': interpolated_dataframes_wanted_cycles[3].mean(axis=0, numeric_only=True)[4:].values
         }
     )
     final_averages.to_excel(f"{output_dir}excel/final_averages_for_model.xlsx")
