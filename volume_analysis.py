@@ -35,7 +35,7 @@ offset_to_use = -50  # offset for local thresholding
 ### Optimal cell cycles ###
 ###########################
 # We only want to average over the cycles that include daughter bud data. This list is for that purpose.
-# In addition, few cycles have been removed manually because of low data quality.
+# In addition, a few cycles have been removed manually because of low data quality.
 # These are: 06_2c1, 08_1c1, 10_3c2, 18_1c1 and 18_2c1
 cycles_to_average = {
     "pos02_2": [1, 2], "pos03_1": [1], "pos03_3": [1], "pos05_1": [1], "pos07_1": [1], "pos07_2": [1, 2],
@@ -134,6 +134,10 @@ def load_all_budj_data():
 
 
 def read_images():
+    """
+    Reads the images from the 'tiff_files_dir' directory. These are stored in a dictonary and returned.
+    :return:
+    """
     print("Reading tiff images..", end="\r", flush=True)
     images = {}
     for pos in range(1, 21):
@@ -392,6 +396,7 @@ def get_data_for_all_cells():
     # for every cell that was tracked using BudJ, we generate the area and volume data
     for cell in individual_cells:
         print(f"Generating volume data ( {round(nth_cell / len(individual_cells) * 100)}% )", end="\r", flush=True)
+
         # get right image from images dictionary and select the right channel (GFP)
         image = tiff_images[cell[3:5]]
         image_gfp = image[:, 1, :, :]
