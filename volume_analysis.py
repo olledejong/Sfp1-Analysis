@@ -447,6 +447,7 @@ def split_cycles_and_interpolate(final_volume_data):
 
     kario_events = load_events()  # load the karyokinesis and budding events
     individual_cells = sorted(list(set(final_volume_data["Cell_pos"])))
+    cycle_durations = []
 
     min_dp_for_int = 10
     desired_datapoints = 100
@@ -464,8 +465,8 @@ def split_cycles_and_interpolate(final_volume_data):
 
             count = 0
             while count < len(kario_events[cell]) - 1:
-                tp1 = kario_events[cell][count] + 2
-                tp2 = kario_events[cell][count + 1]
+                tp1, tp2 = kario_events[cell][count] + 2, kario_events[cell][count + 1]
+                cycle_durations.append(tp2 - tp1)
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
                 # when there are not enough datapoints (because of outlier removal) for this cycle, ignore it
@@ -490,9 +491,10 @@ def split_cycles_and_interpolate(final_volume_data):
         data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_{data_type}s.xlsx")
         interpolated_dataframes.append(data_interpolated)
 
+    av_cycle_duration = np.average(cycle_durations)
     print("Performing interpolation on cell volume, nuc volume and n/c ratio data.. Done!")
-    print(
-        f"There were {tot_under} cycles removed that had not enough datapoints (less than {min_dp_for_int}).")
+    print(f"There were {tot_under} cycles removed that had not enough datapoints (less than {min_dp_for_int}).")
+    print(f"Average cycle duration: {av_cycle_duration} frames, which is equal to {av_cycle_duration * 5} minutes.")
     return interpolated_dataframes
 
 
@@ -534,9 +536,10 @@ def save_data_for_model(interpolated_dataframes_wanted_cycles):
     )
     final_averages.to_excel(f"{output_dir}excel/final_averages_for_model.xlsx")
 
-    #####################
-    ### Main function ###
-    #####################
+
+#####################
+### Main function ###
+#####################
 
 
 def main():
