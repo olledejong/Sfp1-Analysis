@@ -17,7 +17,7 @@ import generate_plots  # file that contains the functions that generate plots
 #######################
 ### IMPORTANT PATHS ###
 #######################
-data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data"
+data_dir = "/Users/olledejong/Studie/MSc Biology/Research Project V1/Code and data/Data"
 tiff_files_dir = data_dir + "/processed_tiffs_nup133/"  # relative path from data directory to tiff directory
 output_dir = data_dir + "/Output/"  # relative path from data directory to image output directory
 budj_data_folder = data_dir + "/Input/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
@@ -250,7 +250,7 @@ def remove_outliers(individual_cells, vol_data):
 def get_extrapolated_datapoints(time_extra_frames, time_partial, data_partial):
     """
     Takes a timerange that holds time-points for which extrapolated data is generated. The linear fit is made
-    based on the partial original time and data (either volume or area) axis
+    based on the original time and volume/area axis
     :param time_extra_frames:
     :param time_partial:
     :param data_partial:
@@ -331,6 +331,7 @@ def get_data_for_single_cell(image_gfp, single_cell_data, daughters_data):
     :return:
     """
     cell_areas, nuc_areas, cell_volumes, nuc_volumes = [], [], [], []
+    bud_perc = 0
     for t in single_cell_data.TimeID:
         t_in_tiff = t - 1  # skew the time by one for tiff dataframe
         imageGFP_at_frame = image_gfp[t_in_tiff, :, :]  # get the GFP data
@@ -344,6 +345,9 @@ def get_data_for_single_cell(image_gfp, single_cell_data, daughters_data):
 
         # check if there is a daughter at this frame; if so, add the area/volume of the daughter to the mother
         if t in daughters_data.keys():
+            if t == list(daughters_data)[-1]:
+                # save percentage of whole volume that is the bud for modelling purposes
+                bud_perc = daughters_data[t][1] / (daughters_data[t][1] + cell_volume)
             cell_area += daughters_data[t][0]
             cell_volume += daughters_data[t][1]
 
@@ -375,7 +379,7 @@ def get_data_for_single_cell(image_gfp, single_cell_data, daughters_data):
         nuc_area, nuc_volume = get_area_and_vol(ma, MA)
         nuc_areas.append(nuc_area)
         nuc_volumes.append(nuc_volume)
-    return cell_areas, cell_volumes, nuc_areas, nuc_volumes
+    return cell_areas, cell_volumes, nuc_areas, nuc_volumes, bud_perc
 
 
 def get_data_for_all_cells():
@@ -392,6 +396,7 @@ def get_data_for_all_cells():
 
     nth_cell = 0
     final_volume_data = pd.DataFrame({})
+    bud_percentages = []
 
     # for every cell that was tracked using BudJ, we generate the area and volume data
     for cell in individual_cells:
@@ -409,7 +414,8 @@ def get_data_for_all_cells():
         daughters_data = get_extrapolated_bud_data(image_gfp, daughters_data)
 
         # get the cell and nuclear areas and volumes for every frame that this cell was tracked
-        cell_areas, cell_vols, nuc_areas, nuc_vols = get_data_for_single_cell(image_gfp, cell_data, daughters_data)
+        cell_areas, cell_vols, nuc_areas, nuc_vols, bud_perc = get_data_for_single_cell(image_gfp, cell_data, daughters_data)
+        bud_percentages.append(bud_perc)
 
         # get the ratios
         ratios = []
@@ -431,7 +437,8 @@ def get_data_for_all_cells():
     final_volume_data = remove_outliers(individual_cells, final_volume_data)
     final_volume_data = final_volume_data.reset_index(drop=True)
     final_volume_data.to_excel(f"{output_dir}excel/nup133_volume_data.xlsx")
-
+    print(f"On average, a bud makes up {round(np.average(bud_percentages) * 100, 2)}% of the total cell volume just "
+          f"before separation")
     print("Generating volume data.. Done!")
     return final_volume_data
 
