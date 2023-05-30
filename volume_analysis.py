@@ -17,7 +17,7 @@ import generate_plots  # file that contains the functions that generate plots
 #######################
 ### IMPORTANT PATHS ###
 #######################
-data_dir = "/Users/olledejong/Studie/MSc Biology/Research Project V1/Code and data/Data"
+data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data"
 tiff_files_dir = data_dir + "/processed_tiffs_nup133/"  # relative path from data directory to tiff directory
 output_dir = data_dir + "/Output/"  # relative path from data directory to image output directory
 budj_data_folder = data_dir + "/Input/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
@@ -30,6 +30,9 @@ kario_data_path = data_dir + "/Input/Nup133/kariokinesis.txt"  # kariokinesis ev
 scaling_factor = 0.16  # microns per pixel ---> 100x objective
 bloc_size_frac_to_use = 0.09  # fraction of the total cell mask pixels that is used as local thresholding block size
 offset_to_use = -50  # offset for local thresholding
+
+amount_of_tif_files = 20
+pd.options.mode.chained_assignment = None  # default='warn'
 
 ###########################
 ### Optimal cell cycles ###
@@ -99,6 +102,16 @@ def load_budj_files():
     return files
 
 
+def get_time_conversion():
+    TimeIDs = 150  # maximum amount of timepoints for a single cell
+    time_step = 5  # every time-point equals 5 real time minutes
+
+    TimeIDs = range(1, TimeIDs + 1)  # TimeIDs range 1 through 150
+    TimeMins = [x * time_step for x in TimeIDs]  # convert to minutes
+
+    return pd.DataFrame({"TimeID": TimeIDs, "Time": TimeMins})
+
+
 def load_all_budj_data():
     """
     Collects all file names and using that, all BudJ data is loaded from the files
@@ -121,14 +134,15 @@ def load_all_budj_data():
             temp_data.loc[len(temp_data) + 1] = row.values
 
         # keep only the following columns
-        temp_data = temp_data.loc[:,
-                    ["TimeID", "Time (min)", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
+        temp_data = temp_data.loc[:, ["TimeID", "Cell_pos", "Volume", "x", "y", "Major R", "Minor r", "Angle"]]
 
         # save the mother + daughter data to the bigger dataframe holding data for all mothers + daughters
         budj_data = pd.concat([budj_data, temp_data])
 
     # sort on cell pos and time-frame
+    budj_data = pd.merge(budj_data, get_time_conversion(), on="TimeID")
     budj_data = budj_data.sort_values(["Cell_pos", "TimeID"]).reset_index(drop=True)
+
     print("Loading all BudJ excel files.. Done!")
     return budj_data
 
@@ -140,14 +154,14 @@ def read_images():
     """
     print("Reading tiff images..", end="\r", flush=True)
     images = {}
-    for pos in range(1, 21):
-        if pos < 10:
-            pos = "0" + str(pos)
-        pos = str(pos)
-        images[pos] = imread(os.path.join(f"{tiff_files_dir}2022_12_06_nup133_yegfp_xy{pos}.nd2.tif"))  # load the image
+    for file in os.listdir(tiff_files_dir):
+        if file.endswith(".tif"):
+            pos = re.findall("(?<=xy)[0-9]{2}", file)
+            if not pos: pos = re.findall("(?<=ser)[0-9]{2}", file)
+            pos = pos[0]
+            images[pos] = imread(f"{tiff_files_dir}{file}")  # load the image
     print("Reading tiff images.. Done!")
     return images
-
 
 def load_events():
     """
@@ -157,19 +171,19 @@ def load_events():
     """
     kario_events = {}
     opened_file = open(kario_data_path)
-    events = {}
 
     for line in opened_file:  # every line in the file is a cell
         if line == "\n":
             continue
         # process the two parts of the line by removing characters
         parts = line.split(':')
-        cell_id = parts[0].replace("\"", "").strip()
-        timepoints = re.sub('[\[\]]', "", parts[1])
+        cell_id = re.findall("pos\d{2}_\d{1,2}", parts[0])[0]
 
         # split timepoints on space to capture them in a list
-        split_timepoints = timepoints.split(",")
-        kario_events[cell_id] = [int(x.strip()) for x in split_timepoints[:-1]]
+        timepoints_list = re.findall("([0-9]+)", parts[1])
+        timepoints_list = [int(x) for x in timepoints_list]
+        if len(timepoints_list) < 1: continue
+        kario_events[cell_id] = timepoints_list
 
     opened_file.close()
     return kario_events
@@ -392,6 +406,8 @@ def get_data_for_all_cells():
     """
     budj_data = load_all_budj_data()
     tiff_images = read_images()
+    print(tiff_images)
+    sys.exit(0)
     individual_cells = sorted([x for x in budj_data["Cell_pos"].unique() if 'd' not in x])
 
     nth_cell = 0
