@@ -13,6 +13,7 @@ from skimage.filters import threshold_local
 from skimage.morphology import remove_small_objects
 
 import generate_plots  # file that contains the functions that generate plots
+from shared.analysis_functions import ellipse_from_budj, get_whole_cell_mask, round_up_to_odd, read_images, get_time_conversion, load_events
 
 #######################
 ### IMPORTANT PATHS ###
@@ -51,21 +52,6 @@ cycles_to_average = {
 #########################
 ### GENERAL FUNCTIONS ###
 #########################
-
-def ellipse_from_budj(t, cell_data):
-    """
-    Define the function that can extract parameters of the ellipse using the data
-    Function to extract parameters of the ellipse from the BudJ table
-    """
-    data_at_frame = cell_data[cell_data["TimeID"] == t]
-    x_pos = float(data_at_frame['x']) / scaling_factor
-    y_pos = float(data_at_frame['y']) / scaling_factor
-    majorR = float(data_at_frame["Major R"]) / scaling_factor
-    minorR = float(data_at_frame["Minor r"]) / scaling_factor
-    angle = float(data_at_frame['Angle']) * (pi / 180)  # convert to radians
-    return x_pos, y_pos, majorR, minorR, angle
-
-
 def get_ellipse(image_gfp, nuc_mask):
     """
     Function that generates and fits the ellipse using the opencv package.
@@ -85,13 +71,6 @@ def get_ellipse(image_gfp, nuc_mask):
             return cv2.fitEllipse(cnt)
 
 
-def round_up_to_odd(f):
-    """
-    Rounds up any number to a whole odd integer
-    """
-    return int(np.ceil(f) // 2 * 2 + 1)
-
-
 def load_budj_files():
     # find all the files that hold budj data
     files = []
@@ -100,16 +79,6 @@ def load_budj_files():
             cell_name = f"pos{filename[2:6]}"
             files.append((filename, cell_name))
     return files
-
-
-def get_time_conversion():
-    TimeIDs = 150  # maximum amount of timepoints for a single cell
-    time_step = 5  # every time-point equals 5 real time minutes
-
-    TimeIDs = range(1, TimeIDs + 1)  # TimeIDs range 1 through 150
-    TimeMins = [x * time_step for x in TimeIDs]  # convert to minutes
-
-    return pd.DataFrame({"TimeID": TimeIDs, "Time": TimeMins})
 
 
 def load_all_budj_data():
@@ -147,48 +116,6 @@ def load_all_budj_data():
     return budj_data
 
 
-def read_images():
-    """
-    Reads the images from the 'tiff_files_dir' directory. These are stored in a dictonary and returned.
-    :return:
-    """
-    print("Reading tiff images..", end="\r", flush=True)
-    images = {}
-    for file in os.listdir(tiff_files_dir):
-        if file.endswith(".tif"):
-            pos = re.findall("(?<=xy)[0-9]{2}", file)
-            if not pos: pos = re.findall("(?<=ser)[0-9]{2}", file)
-            pos = pos[0]
-            images[pos] = imread(f"{tiff_files_dir}{file}")  # load the image
-    print("Reading tiff images.. Done!")
-    return images
-
-def load_events():
-    """
-    Using BudJ, the karyokinesis events have been tracked. This function loads that data and stores it in a dictionary
-    object. This is later utilized when splitting the cell into separate cycles
-    :return:
-    """
-    kario_events = {}
-    opened_file = open(kario_data_path)
-
-    for line in opened_file:  # every line in the file is a cell
-        if line == "\n":
-            continue
-        # process the two parts of the line by removing characters
-        parts = line.split(':')
-        cell_id = re.findall("pos\d{2}_\d{1,2}", parts[0])[0]
-
-        # split timepoints on space to capture them in a list
-        timepoints_list = re.findall("([0-9]+)", parts[1])
-        timepoints_list = [int(x) for x in timepoints_list]
-        if len(timepoints_list) < 1: continue
-        kario_events[cell_id] = timepoints_list
-
-    opened_file.close()
-    return kario_events
-
-
 def get_area_and_vol(minor_r, major_r):
     """
     Calculates the surface area and the volume of an ellipse using the major and minor radii
@@ -206,35 +133,6 @@ def get_area_and_vol(minor_r, major_r):
     SA = 4 * pi * (((r1c * r2c) ** 1.6075 + (r1c * r3c) ** 1.6075 + (r2c * r3c) ** 1.6075) / 3) ** (1 / 1.6075)
     # SA: µm *  µm --> squared µm
     return SA, VOL
-
-
-def get_whole_cell_mask(t, single_cell_data, image_shape):
-    """
-    Given a certain time-point in the tiff movie, the single cell BudJ data, and the image shape,
-    the area of the cell is calculated.
-    :param t:
-    :param single_cell_data:
-    :param image_shape:
-    :return: whole_cell_mask, the x pos and the y pos of the cell
-    """
-    # get/calculate the ellipse information
-    x_pos, y_pos, majorR, minorR, A = ellipse_from_budj(t, single_cell_data)
-
-    y_dim, x_dim = image_shape  # get the dimensions (512x512)
-
-    # create an ogrid that helps us select/'mask' the info we want
-    row, col = np.ogrid[:y_dim, :x_dim]
-
-    # get the mask of the whole cell
-    whole_cell_mask = (
-            (
-                    (((col - x_pos) * cos(A) + (row - y_pos) * sin(A)) ** 2) / (majorR ** 2)
-                    +
-                    (((col - x_pos) * sin(A) - (row - y_pos) * cos(A)) ** 2) / (minorR ** 2) - 1
-            )  # if this sum
-            < 0  # is smaller than zero
-    )
-    return whole_cell_mask, x_pos, y_pos
 
 
 def remove_outliers(individual_cells, vol_data):
@@ -468,7 +366,7 @@ def split_cycles_and_interpolate(final_volume_data):
     """
     print("Performing interpolation on cell volume, nuc volume and n/c ratio data..", end="\r", flush=True)
 
-    kario_events = load_events()  # load the karyokinesis and budding events
+    kario_events, budding_events = load_events(kario_data_path, budding_data_path)
     individual_cells = sorted(list(set(final_volume_data["Cell_pos"])))
     cycle_durations = []
 
@@ -563,12 +461,11 @@ def save_data_for_model(interpolated_dataframes_wanted_cycles):
 #####################
 ### Main function ###
 #####################
-
-
 def main():
     print("Getting started!")
     tic = time.perf_counter()  # start counter
 
+    print(load_events(kario_data_path, budding_data_path))
     # if volume dataset already exists, prevent generating this again and load it
     final_dataframe_path = f"{output_dir}excel/nup133_volume_data.xlsx"
     if not os.path.exists(final_dataframe_path):

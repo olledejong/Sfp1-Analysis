@@ -1,7 +1,6 @@
 import os
 import sys
 import time
-import re
 import pandas as pd
 import numpy as np
 from scipy import interpolate
@@ -9,7 +8,7 @@ from scipy.ndimage import center_of_mass
 from skimage.filters import threshold_local
 from skimage.morphology import remove_small_objects
 
-from shared import analysis_functions  # import the shared needed functions
+from shared.analysis_functions import round_up_to_odd, read_images, load_all_budj_data, get_whole_cell_mask, load_events
 from shared.signal_analysis import generate_plots  # import file that allows for generating plots
 
 #######################
@@ -28,44 +27,9 @@ bloc_size_frac_to_use = 0.095  # fraction of the total cell mask pixels that is 
 offset_to_use = -15  # offset for local thresholding
 pd.options.mode.chained_assignment = None  # default='warn'
 
-#########################
-### GENERAL FUNCTIONS ###
-#########################
-def load_events():
-    """
-    Using BudJ, the karyokinesis events have been tracked. This function loads that data and stores it in a dictionary
-    object. This is later utilized when splitting the cell into separate cycles
-    :return:
-    """
-    kario_events = {}
-    budding_events = {}
-
-    for event in ['kario', 'budding']:
-        path = kario_data_path if event == "kario" else budding_data_path
-
-        with open(path) as opened_file:  # every line in the file is a cell
-            for line in opened_file:
-                if line == "\n":
-                    continue
-                # process the two parts of the line by removing characters
-                parts = line.split(':')
-                cell_id = re.findall("pos\d{2}_\d{1,2}", parts[0])[0]
-
-                # split timepoints on space to capture them in a list
-                timepoints_list = re.findall("([0-9]+)", parts[1])
-                timepoints_list = [int(x) for x in timepoints_list]
-                if len(timepoints_list) < 1: continue
-
-                if event == "kario":
-                    kario_events[cell_id] = timepoints_list
-                else:
-                    budding_events[cell_id] = timepoints_list
-
-            opened_file.close()
-
-    return kario_events, budding_events
-
-
+#################
+### FUNCTIONS ###
+#################
 def get_nuc_and_cyt_gfp_av_signal(imageGFP_at_frame, imageGFP_nuc_mask_local, ncols, nrows, whole_cell_mask):
     # get the centroid of the nuclear mask when there is one
     a, b = np.nan_to_num(center_of_mass(imageGFP_nuc_mask_local))
@@ -92,7 +56,7 @@ def get_nuc_and_cyt_gfp_av_signal(imageGFP_at_frame, imageGFP_nuc_mask_local, nc
 def get_nuc_thresh_mask(imageGFP_at_frame, whole_cell_mask):
     imageGFP_cell_mask = imageGFP_at_frame * whole_cell_mask  # keep only data within the whole cell mask
     num_cell_pixels = np.count_nonzero(whole_cell_mask == True)  # count number of pixels in that mask
-    bloc_size_cell_size_dependent = analysis_functions.round_up_to_odd(bloc_size_frac_to_use * num_cell_pixels)
+    bloc_size_cell_size_dependent = round_up_to_odd(bloc_size_frac_to_use * num_cell_pixels)
     nucl_thresh_mask_local = threshold_local(
         image=imageGFP_cell_mask,
         block_size=bloc_size_cell_size_dependent,
@@ -117,7 +81,7 @@ def get_data_for_single_cell(image_gfp, single_cell_data):
 
         # WHOLE CELL #
         # get whole-cell mask based on budj data
-        whole_cell_mask, x_pos, y_pos = analysis_functions.get_whole_cell_mask(t, single_cell_data, imageGFP_at_frame.shape)
+        whole_cell_mask, x_pos, y_pos = get_whole_cell_mask(t, single_cell_data, imageGFP_at_frame.shape)
 
         # get mean GFP signal and the standard deviation
         mean_GFP = np.mean(imageGFP_at_frame[whole_cell_mask == True])
@@ -129,7 +93,7 @@ def get_data_for_single_cell(image_gfp, single_cell_data):
         # NUCLEUS #
         imageGFP_nuc_mask_local = get_nuc_thresh_mask(imageGFP_at_frame, whole_cell_mask)
 
-        # NUCLEAR GFP CALCULATIONS #
+        # NUCLEAR / CYTO RFP CALCULATIONS #
         cyto_mean, nucleus_mean = get_nuc_and_cyt_gfp_av_signal(imageGFP_at_frame, imageGFP_nuc_mask_local, ncols,
                                                                 nrows, whole_cell_mask)
         GFP_nucleus.append(nucleus_mean)
@@ -146,8 +110,8 @@ def get_data_for_all_cells():
     performed. Based on that, the GFP datapoints are generated.
     :return:
     """
-    budj_data = analysis_functions.load_all_budj_data(data_dir)
-    tiff_images = analysis_functions.read_images(tiff_files_dir)
+    budj_data = load_all_budj_data(data_dir)
+    tiff_images = read_images(tiff_files_dir)
 
     individual_cells = sorted([x for x in budj_data["Cell_pos"].unique()])
 
@@ -260,7 +224,7 @@ def main():
         final_data = pd.read_excel(final_dataframe_path)
 
     # load event data
-    kario_events, budding_events = load_events()
+    kario_events, budding_events = load_events(kario_data_path, budding_data_path)
 
     # check if cycles have been split and interpolated, if not, do this
     interpolated_dataframes = split_cycles_and_interpolate(final_data, kario_events)

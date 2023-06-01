@@ -1,7 +1,6 @@
 import os
 import sys
 import time
-import re
 import cv2
 import pandas as pd
 import numpy as np
@@ -12,7 +11,7 @@ from skimage.filters import threshold_local
 from skimage.morphology import remove_small_objects
 
 # import the shared needed functions
-from shared.analysis_functions import round_up_to_odd, read_images, load_all_budj_data, get_whole_cell_mask
+from shared.analysis_functions import round_up_to_odd, read_images, load_all_budj_data, get_whole_cell_mask, load_events
 from shared.signal_analysis import generate_plots  # import file that allows for generating plots
 
 #######################
@@ -22,7 +21,7 @@ data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Adriana/sca
 tiff_files_dir = data_dir + "Processed_Tiffs/"  # relative path from data directory to tiff directory
 output_dir = data_dir + "output/"  # relative path from data directory to image output directory
 budding_data_path = data_dir + "buddings.txt"  # budding events
-kario_data_path = data_dir + "kariokinesis.txt"  # kariokinesis events
+kario_data_path = data_dir + "cytokinesis.txt"  # kariokinesis events
 
 ###############
 ### GLOBALS ###
@@ -31,44 +30,9 @@ bloc_size_frac_to_use = 0.09  # fraction of the total cell mask pixels that is u
 offset_to_use = -10  # offset for local thresholding
 pd.options.mode.chained_assignment = None  # default='warn'
 
-#########################
-### GENERAL FUNCTIONS ###
-#########################
-def load_events():
-    """
-    Using BudJ, the karyokinesis events have been tracked. This function loads that data and stores it in a dictionary
-    object. This is later utilized when splitting the cell into separate cycles
-    :return:
-    """
-    kario_events = {}
-    budding_events = {}
-
-    for event in ['kario', 'budding']:
-        path = kario_data_path if event == "kario" else budding_data_path
-
-        with open(path) as opened_file:  # every line in the file is a cell
-            for line in opened_file:
-                if line == "\n":
-                    continue
-                # process the two parts of the line by removing characters
-                parts = line.split(':')
-                cell_id = re.findall("pos\d{2}_\d{1,2}", parts[0])[0]
-
-                # split timepoints on space to capture them in a list
-                timepoints_list = re.findall("([0-9]+)", parts[1])
-                timepoints_list = [int(x) for x in timepoints_list]
-                if len(timepoints_list) < 1: continue
-
-                if event == "kario":
-                    kario_events[cell_id] = timepoints_list
-                else:
-                    budding_events[cell_id] = timepoints_list
-
-            opened_file.close()
-
-    return kario_events, budding_events
-
-
+#################
+### FUNCTIONS ###
+#################
 def get_nuc_and_cyt_gfp_av_signal(imageRFP_at_frame, imageRFP_nuc_mask_local, ncols, nrows, whole_cell_mask):
     # get the centroid of the nuclear mask when there is one
     a, b = np.nan_to_num(center_of_mass(imageRFP_nuc_mask_local))
@@ -224,7 +188,7 @@ def split_cycles_and_interpolate(final_data, kario_events):
 
             count = 0
             while count < len(kario_events[cell]) - 1:
-                tp1, tp2 = kario_events[cell][count], kario_events[cell][count + 1] - 2  # go from cyto- to kariokinesis
+                tp1, tp2 = kario_events[cell][count], kario_events[cell][count + 1]  # go from cyto- to kariokinesis
                 cycle_durations.append(tp2 - tp1)
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 

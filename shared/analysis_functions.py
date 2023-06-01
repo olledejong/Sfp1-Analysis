@@ -84,6 +84,41 @@ def load_all_budj_data(data_dir):
     return budj_data
 
 
+def load_events(kario_data_path, budding_data_path):
+    """
+    Using BudJ, the karyokinesis events have been tracked. This function loads that data and stores it in a dictionary
+    object. This is later utilized when splitting the cell into separate cycles
+    :return:
+    """
+    kario_events = {}
+    budding_events = {}
+
+    for event in ['kario', 'budding']:
+        path = kario_data_path if event == "kario" else budding_data_path
+
+        with open(path) as opened_file:  # every line in the file is a cell
+            for line in opened_file:
+                if line == "\n":
+                    continue
+                # process the two parts of the line by removing characters
+                parts = line.split(':')
+                cell_id = re.findall("pos\d{2}_\d{1,2}", parts[0])[0]
+
+                # split timepoints on space to capture them in a list
+                timepoints_list = re.findall("([0-9]+)", parts[1])
+                timepoints_list = [int(x) for x in timepoints_list]
+                if len(timepoints_list) < 1: continue
+
+                if event == "kario":
+                    kario_events[cell_id] = timepoints_list
+                else:
+                    budding_events[cell_id] = timepoints_list
+
+            opened_file.close()
+
+    return kario_events, budding_events
+
+
 def ellipse_from_budj(t, cell_data):
     """
     Define the function that can extract parameters of the ellipse using the data
