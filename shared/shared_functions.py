@@ -8,6 +8,11 @@ from skimage.io import imread
 
 scaling_factor = 0.16  # microns per pixel ---> 100x objective
 
+def create_excel_dir(data_dir):
+    excel_dir = f"{data_dir}/output/excel/"
+    if not os.path.exists(excel_dir):
+        os.makedirs(excel_dir)
+
 def save_figure(path, bbox_inches='tight', dpi=300):
     """
     Custom function that lets you save a pyplot figure and creates the directory where necessary
@@ -36,7 +41,7 @@ def round_up_to_odd(f):
 
 def read_images(tiff_files_dir):
     """
-    Reads the images from the 'tiff_files_dir' directory. These are stored in a dictonary and returned.
+    Reads the images from the 'tiff_files_dir' directory. These are stored in a dictionary and returned.
     :return:
     """
     print("Reading tiff images..", end="\r", flush=True)
@@ -60,7 +65,7 @@ def get_time_conversion():
     })
 
 
-def load_budj_files(data_dir):
+def get_filenames_and_prefixes(data_dir):
     # find all the files that hold budj data
     files = []
     for filename in os.listdir(data_dir):
@@ -75,19 +80,18 @@ def load_budj_files(data_dir):
 def load_all_budj_data(data_dir):
     """
     Collects all file names and using that, all BudJ data is loaded from the files
-    :return:
     """
     print("Loading all BudJ excel files..", end="\r", flush=True)
-    files = load_budj_files(data_dir)  # get the separate files
+    files = get_filenames_and_prefixes(data_dir)  # get the file names and the prefixes for the cell identifiers
 
     # add the data of all files to one single dataframe
     budj_data = pd.DataFrame({})
     for filename, cell_name_prefix in files:
-        # mother with daughter(s) data
         pos_data = pd.read_csv(data_dir + filename, header=0, index_col=0)
-        pos_data["Cell_pos"] = cell_name_prefix + pos_data["Cell"].map(str)
-        temp_data = pd.DataFrame(columns=pos_data.columns)
-        # name the cells correctly, the mother's name is unchanged, but the daughters are now recognizable
+        pos_data["Cell_pos"] = cell_name_prefix + pos_data["Cell"].map(str)  # add cell identifier to dataframe
+        temp_data = pd.DataFrame(columns=pos_data.columns)  # copy column names from the original file
+
+        # add the cell's data to the dataframe
         for index, row in pos_data.iterrows():
             temp_data.loc[len(temp_data) + 1] = row.values
 

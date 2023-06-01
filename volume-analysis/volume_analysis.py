@@ -1,26 +1,25 @@
 import os
 import sys
 import time
-import re
 import cv2
 import pandas as pd
 import numpy as np
-from math import pi, sin, cos
+from math import pi
 from sklearn.linear_model import LinearRegression
 from scipy import interpolate
-from skimage.io import imread
 from skimage.filters import threshold_local
 from skimage.morphology import remove_small_objects
 
 import generate_plots  # file that contains the functions that generate plots
-from shared.shared_functions import ellipse_from_budj, get_whole_cell_mask, round_up_to_odd, read_images, get_time_conversion, load_events
+from shared.shared_functions import ellipse_from_budj, get_whole_cell_mask, round_up_to_odd, read_images, \
+                                    get_time_conversion, load_events, create_excel_dir
 
 #######################
 ### IMPORTANT PATHS ###
 #######################
 data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data/"
 tiff_files_dir = f"{data_dir}processed_tiffs_nup133/"  # relative path from data directory to tiff directory
-output_dir = f"{data_dir}Output/"  # relative path from data directory to image output directory
+output_dir = f"{data_dir}output/"  # relative path from data directory to image output directory
 budj_data_folder = f"{data_dir}Input/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
 budding_data_path = f"{data_dir}Input/Nup133/buddings.txt"  # budding events
 kario_data_path = f"{data_dir}Input/Nup133/kariokinesis.txt"  # kariokinesis events
@@ -120,7 +119,7 @@ def get_area_and_vol(minor_r, major_r):
     """
     Calculates the surface area and the volume of an ellipse using the major and minor radii
     :param minor_r:
-    :param major_r:
+    :param major_r:K
     :return:
     """
     # NOTE: When using OpenCV / cv2 for ellipses, the axes that you give the package to drawn an ellipse are radii,
@@ -464,6 +463,7 @@ def save_data_for_model(interpolated_dataframes_wanted_cycles):
 def main():
     print("Getting started!")
     tic = time.perf_counter()  # start counter
+    create_excel_dir(data_dir)
 
     print(load_events(kario_data_path, budding_data_path))
     # if volume dataset already exists, prevent generating this again and load it
