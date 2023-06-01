@@ -18,10 +18,10 @@ from shared.signal_analysis import generate_plots  # import file that allows for
 ### IMPORTANT PATHS ###
 #######################
 data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Adriana/scarlet_data/"
-tiff_files_dir = data_dir + "Processed_Tiffs/"  # relative path from data directory to tiff directory
-output_dir = data_dir + "output/"  # relative path from data directory to image output directory
-budding_data_path = data_dir + "buddings.txt"  # budding events
-kario_data_path = data_dir + "cytokinesis.txt"  # kariokinesis events
+tiff_files_dir = f"{data_dir}Processed_Tiffs/"  # relative path from data directory to tiff directory
+output_dir = f"{data_dir}output/"  # relative path from data directory to image output directory
+budding_data_path = f"{data_dir}buddings.txt"  # budding events
+kario_data_path = f"{data_dir}cytokinesis.txt"  # kariokinesis events
 
 ###############
 ### GLOBALS ###

@@ -18,12 +18,12 @@ from shared.shared_functions import ellipse_from_budj, get_whole_cell_mask, roun
 #######################
 ### IMPORTANT PATHS ###
 #######################
-data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data"
-tiff_files_dir = data_dir + "/processed_tiffs_nup133/"  # relative path from data directory to tiff directory
-output_dir = data_dir + "/Output/"  # relative path from data directory to image output directory
-budj_data_folder = data_dir + "/Input/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
-budding_data_path = data_dir + "/Input/Nup133/buddings.txt"  # budding events
-kario_data_path = data_dir + "/Input/Nup133/kariokinesis.txt"  # kariokinesis events
+data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Code and data/Data/"
+tiff_files_dir = f"{data_dir}processed_tiffs_nup133/"  # relative path from data directory to tiff directory
+output_dir = f"{data_dir}Output/"  # relative path from data directory to image output directory
+budj_data_folder = f"{data_dir}Input/Nup133/BudJ/"  # folder that holds the BudJ info on all cells
+budding_data_path = f"{data_dir}Input/Nup133/buddings.txt"  # budding events
+kario_data_path = f"{data_dir}Input/Nup133/kariokinesis.txt"  # kariokinesis events
 
 ############################
 ### THRESHOLDING GLOBALS ###
