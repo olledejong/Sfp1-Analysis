@@ -13,7 +13,7 @@ from skimage.filters import threshold_local
 from skimage.morphology import remove_small_objects
 
 import generate_plots  # file that contains the functions that generate plots
-from shared.analysis_functions import ellipse_from_budj, get_whole_cell_mask, round_up_to_odd, read_images, get_time_conversion, load_events
+from shared.shared_functions import ellipse_from_budj, get_whole_cell_mask, round_up_to_odd, read_images, get_time_conversion, load_events
 
 #######################
 ### IMPORTANT PATHS ###

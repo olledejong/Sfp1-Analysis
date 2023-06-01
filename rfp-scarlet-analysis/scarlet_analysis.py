@@ -11,7 +11,7 @@ from skimage.filters import threshold_local
 from skimage.morphology import remove_small_objects
 
 # import the shared needed functions
-from shared.analysis_functions import round_up_to_odd, read_images, load_all_budj_data, get_whole_cell_mask, load_events
+from shared.shared_functions import round_up_to_odd, read_images, load_all_budj_data, get_whole_cell_mask, load_events
 from shared.signal_analysis import generate_plots  # import file that allows for generating plots
 
 #######################

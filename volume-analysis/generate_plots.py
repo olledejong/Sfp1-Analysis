@@ -1,30 +1,11 @@
-import os
 import matplotlib.pyplot as plt
-from volume_analysis import output_dir
 import numpy as np
 import pandas as pd
 
+from volume_analysis import output_dir
+from shared.shared_functions import save_figure
+
 plt.style.use('seaborn-v0_8')
-
-
-def save_figure(path, bbox_inches='tight', dpi=300):
-    """
-    Custom function that lets you save a pyplot figure and creates the directory where necessary
-    """
-    directory = os.path.split(path)[0]
-    filename = os.path.split(path)[1]
-    if directory == '':
-        directory = '.'
-
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-
-    save_path = os.path.join(directory, filename)
-
-    # Actually save the figure
-    plt.savefig(save_path, bbox_inches=bbox_inches, dpi=dpi)
-    plt.close()
-
 
 def combined_volumes(final_volume_data):
     """
