@@ -302,9 +302,8 @@ def get_data_for_all_cells():
     :return:
     """
     budj_data = load_all_budj_data()
-    tiff_images = read_images()
-    print(tiff_images)
-    sys.exit(0)
+    tiff_images = read_images(tiff_files_dir)
+
     individual_cells = sorted([x for x in budj_data["Cell_pos"].unique() if 'd' not in x])
 
     nth_cell = 0
@@ -447,13 +446,11 @@ def save_data_for_model(interpolated_dataframes_wanted_cycles):
     :return:
     """
 
-    final_averages = pd.DataFrame(
-        {
-            'cell_volumes': interpolated_dataframes_wanted_cycles[1].mean(axis=0, numeric_only=True)[4:].values,
-            'nuc_surface_areas': interpolated_dataframes_wanted_cycles[2].mean(axis=0, numeric_only=True)[4:].values,
-            'nuc_volumes': interpolated_dataframes_wanted_cycles[3].mean(axis=0, numeric_only=True)[4:].values
-        }
-    )
+    final_averages = pd.DataFrame({
+        'cell_volumes': interpolated_dataframes_wanted_cycles[1].mean(axis=0, numeric_only=True)[4:].values,
+        'nuc_surface_areas': interpolated_dataframes_wanted_cycles[2].mean(axis=0, numeric_only=True)[4:].values,
+        'nuc_volumes': interpolated_dataframes_wanted_cycles[3].mean(axis=0, numeric_only=True)[4:].values
+    })
     final_averages.to_excel(f"{output_dir}excel/final_averages_for_model.xlsx")
 
 

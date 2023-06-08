@@ -11,7 +11,7 @@ from skimage.filters import threshold_local
 from skimage.morphology import remove_small_objects
 
 # import the shared needed functions
-from shared.shared_functions import round_up_to_odd, read_images, load_all_budj_data, get_whole_cell_mask, load_events
+from shared.shared_functions import round_up_to_odd, read_images, load_all_budj_data, get_whole_cell_mask, load_events, create_excel_dir
 from shared.signal_analysis import generate_plots  # import file that allows for generating plots
 
 #######################
@@ -223,6 +223,7 @@ def split_cycles_and_interpolate(final_data, kario_events):
 def main():
     print("Getting started!")
     tic = time.perf_counter()  # start counter
+    create_excel_dir(data_dir)
 
     # if dataset already exists, prevent generating this again and load it
     final_dataframe_path = f"{output_dir}excel/sfp1_RFP_only_data.xlsx"
