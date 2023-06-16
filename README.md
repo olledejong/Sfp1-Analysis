@@ -5,13 +5,13 @@ This repository contains multiple directories that apply a similar sort of analy
 All three sub-folders contain a Jupyter notebook, as well as a script. The notebook was/is used for exploratory analysis, 
 while the script is an efficient way to execute the complete analysis.
 
-### Sub-folder [gfp-only-analysis](gfp-only-analysis)
+### Sub-folder [gfp-only-analysis](sfp1-gfp-analysis)
 Provides insight into the Sfp1 difference in nuclear and cytoplasmic signal intensity. In this particular case, the only data
 used from the tif images is the GFP channel, which tracks Sfp1. Local/adaptive thresholding is performed to find the nucleus
 its centroid. This is used to calculate the average nuclear signal. The cytoplasmic signal is taken as an average of the rest
 of the cell (so omitting the nucleus).
 
-### Sub-folder [rfp-scarlet-analysis](rfp-scarlet-analysis)
+### Sub-folder [rfp-scarlet-analysis](sfp1-mScarlet-analysis)
 Provides insight into the nuclear and cytoplasmic signal intensity. In this particular case, the only data used from the 
 tif images is the RFP channel. Local/adaptive thresholding is performed to find the nucleus its centroid.  This is used to
 calculate the average nuclear signal. The cytoplasmic signal is taken as an average of the rest
