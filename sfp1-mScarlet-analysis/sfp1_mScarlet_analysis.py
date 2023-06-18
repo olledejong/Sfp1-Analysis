@@ -234,7 +234,7 @@ def main():
         final_data = pd.read_excel(final_dataframe_path)
 
     # get event data
-    kario_events, budding_events = load_events()
+    kario_events, budding_events = load_events(kario_data_path, budding_data_path)
 
     generate_plots.combined_channel_data(final_data, output_dir, "RFP")
 
