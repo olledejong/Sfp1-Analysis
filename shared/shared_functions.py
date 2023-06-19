@@ -187,9 +187,9 @@ def get_whole_cell_mask(t, single_cell_data, image_shape):
     return whole_cell_mask, x_pos, y_pos
 
 
-def get_nuc_and_cyt_gfp_av_signal(image_at_frame, imageGFP_nuc_mask_local, ncols, nrows, whole_cell_mask):
+def get_nuc_and_cyt_gfp_av_signal(image_at_frame, image_nuc_mask_local, ncols, nrows, whole_cell_mask):
     # get the centroid of the nuclear mask when there is one
-    a, b = np.nan_to_num(center_of_mass(imageGFP_nuc_mask_local))
+    a, b = np.nan_to_num(center_of_mass(image_nuc_mask_local))
     r, r1 = 3, 9
     x1, y1 = np.ogrid[-a: nrows - a, -b: ncols - b]
     disk_mask_nuc = x1 * x1 + y1 * y1 < r * r
