@@ -4,7 +4,6 @@ import time
 import pandas as pd
 import numpy as np
 from scipy import interpolate
-from scipy.ndimage import center_of_mass
 from skimage.filters import threshold_local
 from skimage.morphology import remove_small_objects
 
@@ -30,29 +29,6 @@ pd.options.mode.chained_assignment = None  # default='warn'
 #################
 ### FUNCTIONS ###
 #################
-def get_nuc_and_cyt_gfp_av_signal(imageGFP_at_frame, imageGFP_nuc_mask_local, ncols, nrows, whole_cell_mask):
-    # get the centroid of the nuclear mask when there is one
-    a, b = np.nan_to_num(center_of_mass(imageGFP_nuc_mask_local))
-    r, r1 = 3, 9
-    x1, y1 = np.ogrid[-a: nrows - a, -b: ncols - b]
-    disk_mask_nuc = x1 * x1 + y1 * y1 < r * r
-    disk_mask_cyto = x1 * x1 + y1 * y1 < r1 * r1
-
-    # get GFP signal mean in the nucleus
-    nucleus_mean = np.mean(imageGFP_at_frame[disk_mask_nuc == True])
-    if nucleus_mean < 5:
-        nucleus_mean = np.nan
-
-    # GFP in the cytoplasm
-    diff = np.logical_and(disk_mask_cyto, whole_cell_mask)
-    mask_of_cytoplasm = whole_cell_mask ^ diff
-    cyto_mean = np.mean(imageGFP_at_frame[mask_of_cytoplasm == True])
-    if cyto_mean < 5:
-        cyto_mean = np.nan
-
-    return cyto_mean, nucleus_mean
-
-
 def get_nuc_thresh_mask(imageGFP_at_frame, whole_cell_mask):
     imageGFP_cell_mask = imageGFP_at_frame * whole_cell_mask  # keep only data within the whole cell mask
     num_cell_pixels = np.count_nonzero(whole_cell_mask == True)  # count number of pixels in that mask

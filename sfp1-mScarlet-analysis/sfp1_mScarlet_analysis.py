@@ -5,13 +5,12 @@ import cv2
 import pandas as pd
 import numpy as np
 from scipy import interpolate
-from scipy.ndimage import center_of_mass, binary_erosion
-from skimage.io import imread
+from scipy.ndimage import binary_erosion
 from skimage.filters import threshold_local
 from skimage.morphology import remove_small_objects
 
 # import the shared needed functions
-from shared.shared_functions import round_up_to_odd, read_images, load_all_budj_data, get_whole_cell_mask, load_events, create_excel_dir
+from shared.shared_functions import round_up_to_odd, read_images, load_all_budj_data, get_whole_cell_mask, load_events, create_excel_dir, get_nuc_and_cyt_gfp_av_signal
 from shared.signal_analysis import generate_plots  # import file that allows for generating plots
 
 #######################
@@ -33,29 +32,6 @@ pd.options.mode.chained_assignment = None  # default='warn'
 #################
 ### FUNCTIONS ###
 #################
-def get_nuc_and_cyt_gfp_av_signal(imageRFP_at_frame, imageRFP_nuc_mask_local, ncols, nrows, whole_cell_mask):
-    # get the centroid of the nuclear mask when there is one
-    a, b = np.nan_to_num(center_of_mass(imageRFP_nuc_mask_local))
-    r, r1 = 3, 9
-    x1, y1 = np.ogrid[-a: nrows - a, -b: ncols - b]
-    disk_mask_nuc = x1 * x1 + y1 * y1 < r * r
-    disk_mask_cyto = x1 * x1 + y1 * y1 < r1 * r1
-
-    # get RFP signal mean in the nucleus
-    nucleus_mean = np.mean(imageRFP_at_frame[disk_mask_nuc == True])
-    if nucleus_mean < 5:
-        nucleus_mean = np.nan
-
-    # RFP in the cytoplasm
-    diff = np.logical_and(disk_mask_cyto, whole_cell_mask)
-    mask_of_cytoplasm = whole_cell_mask ^ diff
-    cyto_mean = np.mean(imageRFP_at_frame[mask_of_cytoplasm == True])
-    if cyto_mean < 5:
-        cyto_mean = np.nan
-
-    return cyto_mean, nucleus_mean
-
-
 def get_nuc_thresh_mask(imageRFP_at_frame, whole_cell_mask):
     imageRFP_cell_mask = imageRFP_at_frame * whole_cell_mask  # keep only data within the whole cell mask
     num_cell_pixels = np.count_nonzero(whole_cell_mask == True)  # count number of pixels in that mask

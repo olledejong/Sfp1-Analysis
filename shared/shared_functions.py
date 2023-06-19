@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from math import pi, cos, sin
 from skimage.io import imread
+from scipy.ndimage import center_of_mass
 
 scaling_factor = 0.16  # microns per pixel ---> 100x objective
 
@@ -184,3 +185,26 @@ def get_whole_cell_mask(t, single_cell_data, image_shape):
             < 0  # is smaller than zero
     )
     return whole_cell_mask, x_pos, y_pos
+
+
+def get_nuc_and_cyt_gfp_av_signal(image_at_frame, imageGFP_nuc_mask_local, ncols, nrows, whole_cell_mask):
+    # get the centroid of the nuclear mask when there is one
+    a, b = np.nan_to_num(center_of_mass(imageGFP_nuc_mask_local))
+    r, r1 = 3, 9
+    x1, y1 = np.ogrid[-a: nrows - a, -b: ncols - b]
+    disk_mask_nuc = x1 * x1 + y1 * y1 < r * r
+    disk_mask_cyto = x1 * x1 + y1 * y1 < r1 * r1
+
+    # get GFP signal mean in the nucleus
+    nucleus_mean = np.mean(image_at_frame[disk_mask_nuc == True])
+    if nucleus_mean < 5:
+        nucleus_mean = np.nan
+
+    # GFP in the cytoplasm
+    diff = np.logical_and(disk_mask_cyto, whole_cell_mask)
+    mask_of_cytoplasm = whole_cell_mask ^ diff
+    cyto_mean = np.mean(image_at_frame[mask_of_cytoplasm == True])
+    if cyto_mean < 5:
+        cyto_mean = np.nan
+
+    return cyto_mean, nucleus_mean
