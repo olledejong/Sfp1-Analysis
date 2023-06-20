@@ -31,7 +31,6 @@ scaling_factor = 0.16  # microns per pixel ---> 100x objective
 bloc_size_frac_to_use = 0.09  # fraction of the total cell mask pixels that is used as local thresholding block size
 offset_to_use = -50  # offset for local thresholding
 
-amount_of_tif_files = 20
 pd.options.mode.chained_assignment = None  # default='warn'
 
 ###########################
@@ -51,15 +50,15 @@ cycles_to_average = {
 #########################
 ### GENERAL FUNCTIONS ###
 #########################
-def get_ellipse(image_gfp, nuc_mask):
+def get_ellipse(image_gfp, mask):
     """
     Function that generates and fits the ellipse using the opencv package.
     :param image_gfp: the GFP image data
-    :param nuc_mask: nuclear mask determined by budj data
+    :param mask: nuclear mask determined by budj data
     :return:
     """
-    mask = image_gfp * nuc_mask
-    thresh = mask.astype(np.uint8)  # change type to uint8
+    masked_image = image_gfp * mask
+    thresh = masked_image.astype(np.uint8)  # change type to uint8
 
     contours, hierarchy = cv2.findContours(thresh, 1, 2)
 
@@ -122,9 +121,9 @@ def get_area_and_vol(minor_r, major_r):
     :param major_r:K
     :return:
     """
-    # NOTE: When using OpenCV / cv2 for ellipses, the axes that you give the package to drawn an ellipse are radii,
-    # however, what the ellipse fitting provides you with are diameters. In order to calculate areas and volumes we
-    # need to divide the axes by two to get the semi-axes.
+    # NOTE: When using OpenCV / cv2 for ellipses, the axes that you give the package to draw an ellipse are radii or
+    # semi-axes however, what the ellipse fitting provides you with are diameters. In order to calculate areas and
+    # volumes we need to divide the axes by two to get the semi-axes.
     r1c = (major_r * scaling_factor) / 2  # from pixels to µm using scaling factor
     r2c = (minor_r * scaling_factor) / 2  # from pixels to µm using scaling factor
     r3c = (np.average((major_r, minor_r)) * scaling_factor) / 2  # third axis of ellipse is average of two known ones
