@@ -331,7 +331,7 @@ def get_data_for_all_cells():
         # get the ratios
         ratios = []
         for i in range(0, len(nuc_vols)):
-            ratios.append(None) if nuc_vols[i] is None else ratios.append(nuc_vols[i] / cell_vols[i])
+            ratios.append(None) if nuc_vols[i] is None else ratios.append(nuc_vols[i] / cell_vols[i] - nuc_vols[i])
 
         # store data in this cell its dataframe
         cell_data["Cell_area"] = pd.Series(cell_areas, index=cell_data.index, dtype="float64")
