@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import cv2
 import pandas as pd
 import numpy as np
 from scipy import interpolate
@@ -100,6 +101,7 @@ def get_data_for_all_cells():
 
         # get right image from images dictionary and select the right channel (GFP)
         image = tiff_images[cell[3:5]]
+        image = cv2.convertScaleAbs(image, alpha=1.2, beta=0)  # enhance contrast
         image_gfp = image[:, :, :, 1]
 
         # get this cell it's budj data
@@ -144,7 +146,7 @@ def split_cycles_and_interpolate(final_data, kario_events):
     cols = ["cell", "cycle", "start", "end"]
     cols += range(desired_datapoints)
 
-    interpolated_dataframes = []
+    interpolated_dataframes = {}
     tot_under = 0
     for data_type in ["GFP_total", "GFP_nucleus", "GFP_cyto", "GFP_ratio"]:
         data_interpolated = pd.DataFrame(columns=cols)
@@ -178,7 +180,7 @@ def split_cycles_and_interpolate(final_data, kario_events):
                 count += 1
 
         data_interpolated.to_excel(f"{output_dir}excel/cycles_interpolated_{data_type}s.xlsx")
-        interpolated_dataframes.append(data_interpolated)
+        interpolated_dataframes[data_type] = data_interpolated
 
     av_cycle_duration = np.average(cycle_durations)
     print("Performing interpolation on data.. Done!")

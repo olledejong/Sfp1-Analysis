@@ -57,6 +57,8 @@ def separate_interpolated_cycles(interpolated_dataframes, output_dir, channel_na
     """
     This function takes the data of the three main datatypes of interest and creates a plot of each one for every cycle.
     :param interpolated_dataframes:
+    :param output_dir:
+    :param channel_name:
     :return:
     """
     dataframes = {
