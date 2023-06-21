@@ -62,7 +62,7 @@ def get_time_conversion():
 
     return pd.DataFrame({
         "TimeID": range(1, TimeIDs + 1),
-        "Time": [x * time_step for x in TimeIDs]
+        "Time": [x * time_step for x in range(1, TimeIDs + 1, 1)]
     })
 
 
