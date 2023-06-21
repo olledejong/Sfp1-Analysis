@@ -60,10 +60,10 @@ def separate_interpolated_cycles(interpolated_dataframes, output_dir, channel_na
     :return:
     """
     dataframes = {
-        f"Total {channel_name}": interpolated_dataframes["RFP_total"],
-        f"Nuclear {channel_name}": interpolated_dataframes["RFP_nucleus"],
-        f"Cytoplasmic {channel_name}": interpolated_dataframes["RFP_cyto"],
-        "NC Ratio": interpolated_dataframes["RFP_ratio"],
+        f"Total {channel_name}": interpolated_dataframes[f"{channel_name}_total"],
+        f"Nuclear {channel_name}": interpolated_dataframes[f"{channel_name}_nucleus"],
+        f"Cytoplasmic {channel_name}": interpolated_dataframes[f"{channel_name}_cyto"],
+        "NC Ratio": interpolated_dataframes[f"{channel_name}_ratio"],
     }
     progress = 1
     for dataframe in dataframes:
@@ -94,10 +94,10 @@ def averaged_plots(interpolated_dataframes, output_dir, channel_name):
     """
     print("Generating the averaged interpolated data plots..", end="\r", flush=True)
 
-    nuclear_averages = interpolated_dataframes["RFP_nucleus"].mean(axis=0, numeric_only=True)
-    cyto_averages = interpolated_dataframes["RFP_cyto"].mean(axis=0, numeric_only=True)
+    nuclear_averages = interpolated_dataframes[f"{channel_name}_nucleus"].mean(axis=0, numeric_only=True)
+    cyto_averages = interpolated_dataframes[f"{channel_name}_cyto"].mean(axis=0, numeric_only=True)
     to_plot = {
-        f"Total {channel_name}": interpolated_dataframes["RFP_total"].mean(axis=0, numeric_only=True),
+        f"Total {channel_name}": interpolated_dataframes[f"{channel_name}_total"].mean(axis=0, numeric_only=True),
         f"Nuclear {channel_name}": nuclear_averages,
         f"Cytoplasmic {channel_name}": cyto_averages,
         "NC Ratio": nuclear_averages[4:] / cyto_averages[4:],
