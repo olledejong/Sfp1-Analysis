@@ -114,7 +114,7 @@ def averaged_plots(interpolated_dataframes, output_dir, channel_name):
         plt.plot(t_span / 100, averages, c='grey', lw=3, alpha=0.6, label=f"Raw average")
         plt.plot(t_span / 100, poly_y, c='darkred', lw=4, alpha=0.8, label=f"Polynomial average")
         plt.title(f"Average Sfp1 {item} signal over the cell cycle", fontstyle='italic', y=1.02)
-        plt.xlabel("Time")
+        plt.xlabel("Cell cycle progression")
         plt.ylabel(item)
         plt.legend()
         save_figure(f"{output_dir}plots/interpolated_averaged/{item}.png")
