@@ -102,14 +102,21 @@ def averaged_plots(interpolated_dataframes, output_dir, channel_name):
         f"Total {channel_name}": interpolated_dataframes[f"{channel_name}_total"].mean(axis=0, numeric_only=True),
         f"Nuclear {channel_name}": nuclear_averages,
         f"Cytoplasmic {channel_name}": cyto_averages,
-        "NC Ratio": nuclear_averages[4:] / cyto_averages[4:],
+        f"{channel_name} nuclear-to-cytosolic ratio": nuclear_averages / cyto_averages,
     }
+    t_span = np.linspace(0, 100, 99)
 
     for item in to_plot:
-        plt.plot(to_plot[item][4:].values, 'r', linewidth=2)
-        plt.title(f"Average {item} over time", fontstyle='italic', y=1.02)
+        averages = to_plot[item][4:].values
+        polfit = np.polyfit(t_span / 100, averages, 10)
+        poly_y = np.polyval(polfit, t_span / 100)
+
+        plt.plot(t_span / 100, averages, c='grey', lw=3, alpha=0.6, label=f"Raw average")
+        plt.plot(t_span / 100, poly_y, c='darkred', lw=4, alpha=0.8, label=f"Polynomial average")
+        plt.title(f"Average Sfp1 {item} signal over the cell cycle", fontstyle='italic', y=1.02)
         plt.xlabel("Time")
         plt.ylabel(item)
+        plt.legend()
         save_figure(f"{output_dir}plots/interpolated_averaged/{item}.png")
 
     print("Generating the averaged interpolated data plots.. Done!")

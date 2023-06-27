@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import cv2
+import traceback
 import pandas as pd
 import numpy as np
 from scipy import interpolate
@@ -157,7 +158,7 @@ def split_cycles_and_interpolate(final_data, kario_events):
 
             count = 0
             while count < len(kario_events[cell]) - 1:
-                tp1, tp2 = kario_events[cell][count] + 2, kario_events[cell][count + 1]
+                tp1, tp2 = kario_events[cell][count], kario_events[cell][count + 1]
                 cycle_durations.append(tp2 - tp1)
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
@@ -222,6 +223,11 @@ def main():
 
 
 # SCRIPT STARTS HERE
-if __name__ == "__main__":
-    main()
-    sys.exit(0)
+if __name__ == '__main__':
+    try:
+        main()
+        sys.exit(0)
+    except Exception:
+        print("\nSomething went wrong while running the model:\n", traceback.format_exc())
+        sys.exit(1)
+

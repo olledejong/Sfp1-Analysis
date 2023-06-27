@@ -1,6 +1,8 @@
 import os
 import sys
 import time
+import traceback
+
 import cv2
 import pandas as pd
 import numpy as np
@@ -231,6 +233,11 @@ def main():
 
 
 # SCRIPT STARTS HERE
-if __name__ == "__main__":
-    main()
-    sys.exit(0)
+if __name__ == '__main__':
+    try:
+        main()
+        sys.exit(0)
+    except Exception:
+        print("\nSomething went wrong while running the model:\n", traceback.format_exc())
+        sys.exit(1)
+
