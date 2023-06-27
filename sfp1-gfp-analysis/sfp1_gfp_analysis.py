@@ -135,6 +135,7 @@ def split_cycles_and_interpolate(final_data, kario_events):
     Function responsible splitting the data of each cell on karyokinesis events, where after the data per
     cycle is interpolated to 100 datapoints.
     :param final_data:
+    :param kario_events:
     :return interpolated_dataframes: a list with the interpolated dataframes
     """
     print("Performing interpolation on data..", end="\r", flush=True)
