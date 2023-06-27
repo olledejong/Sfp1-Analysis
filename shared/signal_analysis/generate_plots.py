@@ -110,7 +110,7 @@ def averaged_plots(interpolated_dataframes, output_dir, channel_name):
         averages = to_plot[item][4:].values
         polfit = np.polyfit(t_span / 100, averages, 10)
         poly_y = np.polyval(polfit, t_span / 100)
-        if item == "Sfp1-RFP nuclear-to-cytosolic ratio": item = "Sfp1-mScarlet nuclear-to-cytosolic ratio"
+        if item == "Sfp1-RFP N/C ratio": item = "Sfp1-mScarlet N/C ratio"
         plt.plot(t_span / 100, averages, c='grey', lw=3, alpha=0.6, label=f"Raw average")
         plt.plot(t_span / 100, poly_y, c='darkred', lw=4, alpha=0.8, label=f"Polynomial average")
         plt.title(f"Average {item} signal over the cell cycle", fontstyle='italic', y=1.02)
