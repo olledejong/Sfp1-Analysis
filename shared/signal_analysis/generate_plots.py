@@ -99,10 +99,10 @@ def averaged_plots(interpolated_dataframes, output_dir, channel_name):
     nuclear_averages = interpolated_dataframes[f"{channel_name}_nucleus"].mean(axis=0, numeric_only=True)
     cyto_averages = interpolated_dataframes[f"{channel_name}_cyto"].mean(axis=0, numeric_only=True)
     to_plot = {
-        f"Total {channel_name}": interpolated_dataframes[f"{channel_name}_total"].mean(axis=0, numeric_only=True),
-        f"Nuclear {channel_name}": nuclear_averages,
-        f"Cytoplasmic {channel_name}": cyto_averages,
-        f"{channel_name} nuclear-to-cytosolic ratio": nuclear_averages / cyto_averages,
+        f"Sfp1 Total {channel_name}": interpolated_dataframes[f"{channel_name}_total"].mean(axis=0, numeric_only=True),
+        f"Sfp1 Nuclear {channel_name}": nuclear_averages,
+        f"Sfp1 Cytoplasmic {channel_name}": cyto_averages,
+        f"Sfp1-{channel_name} N/C ratio": nuclear_averages / cyto_averages,
     }
     t_span = np.linspace(0, 100, 99)
 
@@ -110,14 +110,14 @@ def averaged_plots(interpolated_dataframes, output_dir, channel_name):
         averages = to_plot[item][4:].values
         polfit = np.polyfit(t_span / 100, averages, 10)
         poly_y = np.polyval(polfit, t_span / 100)
-
+        if item == "Sfp1-RFP nuclear-to-cytosolic ratio": item = "Sfp1-mScarlet nuclear-to-cytosolic ratio"
         plt.plot(t_span / 100, averages, c='grey', lw=3, alpha=0.6, label=f"Raw average")
         plt.plot(t_span / 100, poly_y, c='darkred', lw=4, alpha=0.8, label=f"Polynomial average")
-        plt.title(f"Average Sfp1 {item} signal over the cell cycle", fontstyle='italic', y=1.02)
+        plt.title(f"Average {item} signal over the cell cycle", fontstyle='italic', y=1.02)
         plt.xlabel("Cell cycle progression")
         plt.ylabel(item)
         plt.legend()
-        save_figure(f"{output_dir}plots/interpolated_averaged/{item}.png")
+        save_figure(f"{output_dir}plots/interpolated_averaged/{item.replace('/', '')}.png")
 
     print("Generating the averaged interpolated data plots.. Done!")
 

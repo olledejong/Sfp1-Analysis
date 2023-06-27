@@ -18,11 +18,12 @@ from shared.signal_analysis import generate_plots  # import file that allows for
 #######################
 ### IMPORTANT PATHS ###
 #######################
-data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/Adriana/scarlet_data/"
-tiff_files_dir = f"{data_dir}Processed_Tiffs/"  # relative path from data directory to tiff directory
+data_dir = "C:/Users/Olle de Jong/Documents/MSc Biology/MSB Research/SignalAnalysisData/Sfp1_mScarlet/"
+tiff_files_dir = f"{data_dir}input/Processed_Tiffs/"  # relative path from data directory to tiff directory
+budj_data_dir = f"{data_dir}input/"  # folder that holds the BudJ info on all cells
+budding_data_path = f"{data_dir}input/buddings.txt"  # budding events
+kario_data_path = f"{data_dir}input/cytokinesis.txt"  # kariokynesis events
 output_dir = f"{data_dir}output/"  # relative path from data directory to image output directory
-budding_data_path = f"{data_dir}buddings.txt"  # budding events
-kario_data_path = f"{data_dir}cytokinesis.txt"  # kariokinesis events
 
 ###############
 ### GLOBALS ###
@@ -166,7 +167,7 @@ def split_cycles_and_interpolate(final_data, kario_events):
 
             count = 0
             while count < len(kario_events[cell]) - 1:
-                tp1, tp2 = kario_events[cell][count], kario_events[cell][count + 1]  # go from cyto- to kariokinesis
+                tp1, tp2 = kario_events[cell][count] - 2, kario_events[cell][count + 1] - 2  # go from cyto- to kariokinesis
                 cycle_durations.append(tp2 - tp1)
                 cell_cycle_dat = single_cell_data[single_cell_data.TimeID.between(tp1, tp2)]
 
@@ -220,10 +221,10 @@ def main():
     interpolated_dataframes = split_cycles_and_interpolate(final_data, kario_events)
 
     # generate a big overview image that shows RFP intensities
-    generate_plots.dynamics_overview_all_cells(final_data, kario_events, budding_events, output_dir, "RFP")
+    # generate_plots.dynamics_overview_all_cells(final_data, kario_events, budding_events, output_dir, "RFP")
 
     # generate a plot per interpolated cycle
-    generate_plots.separate_interpolated_cycles(interpolated_dataframes, output_dir, "RFP")
+    # generate_plots.separate_interpolated_cycles(interpolated_dataframes, output_dir, "RFP")
 
     generate_plots.averaged_plots(interpolated_dataframes, output_dir, "RFP")
 

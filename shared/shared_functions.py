@@ -66,10 +66,10 @@ def get_time_conversion():
     })
 
 
-def get_filenames_and_prefixes(data_dir):
+def get_filenames_and_prefixes(budj_data_dir):
     # find all the files that hold budj data
     files = []
-    for filename in os.listdir(data_dir):
+    for filename in os.listdir(budj_data_dir):
         if "Cell data .csv" in filename:
             pos = re.findall("(?<=xy)[0-9]{2}", filename)
             if not pos: pos = re.findall("(?<=ser)[0-9]{2}", filename)
@@ -78,17 +78,17 @@ def get_filenames_and_prefixes(data_dir):
     return files
 
 
-def load_all_budj_data(data_dir):
+def load_all_budj_data(budj_data_dir):
     """
     Collects all file names and using that, all BudJ data is loaded from the files
     """
     print("Loading all BudJ excel files..", end="\r", flush=True)
-    files = get_filenames_and_prefixes(data_dir)  # get the file names and the prefixes for the cell identifiers
+    files = get_filenames_and_prefixes(budj_data_dir)  # get the file names and the prefixes for the cell identifiers
 
     # add the data of all files to one single dataframe
     budj_data = pd.DataFrame({})
     for filename, cell_name_prefix in files:
-        pos_data = pd.read_csv(data_dir + filename, header=0, index_col=0)
+        pos_data = pd.read_csv(budj_data_dir + filename, header=0, index_col=0)
         pos_data["Cell_pos"] = cell_name_prefix + pos_data["Cell"].map(str)  # add cell identifier to dataframe
         temp_data = pd.DataFrame(columns=pos_data.columns)  # copy column names from the original file
 
